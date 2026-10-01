@@ -2,6 +2,11 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 import AuraBackground from "@/components/shared/AuraBackground";
 import LandingPage from "@/features/landing/pages/LandingPage";
+import LoginPage from "@/features/auth/pages/LoginPage";
+import RegisterPage from "@/features/auth/pages/RegisterPage";
+import AdminRegisterPage from "@/features/auth/pages/AdminRegisterPage";
+import EmployeeRegisterPage from "@/features/auth/pages/EmployeeRegisterPage";
+import DashboardPage from "@/features/dashboard/pages/DashboardPage";
 
 function App() {
   return (
@@ -10,24 +15,13 @@ function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
 
-          {/* Authentication routes will be added next */}
-          <Route
-            path="/login"
-            element={
-              <div className="flex min-h-screen items-center justify-center">
-                Login
-              </div>
-            }
-          />
+          <Route path="/login" element={<LoginPage />} />
 
-          <Route
-            path="/register"
-            element={
-              <div className="flex min-h-screen items-center justify-center">
-                Register
-              </div>
-            }
-          />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/register/admin" element={<AdminRegisterPage />} />
+          <Route path="/register/employee" element={<EmployeeRegisterPage />} />
+
+          <Route path="/dashboard" element={<DashboardPage />} />
         </Routes>
       </AuraBackground>
     </BrowserRouter>
