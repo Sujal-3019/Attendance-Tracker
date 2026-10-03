@@ -7,6 +7,10 @@ import RegisterPage from "@/features/auth/pages/RegisterPage";
 import AdminRegisterPage from "@/features/auth/pages/AdminRegisterPage";
 import EmployeeRegisterPage from "@/features/auth/pages/EmployeeRegisterPage";
 import DashboardPage from "@/features/dashboard/pages/DashboardPage";
+import AttendancePage from "./features/attendance/pages/AttendancePage";
+import EmployeesPage from "./features/employees/pages/EmployeesPage";
+import EmployeeDetailsPage from "@/features/employees/pages/EmployeeDetailsPage";
+
 
 function App() {
   return (
@@ -22,6 +26,10 @@ function App() {
           <Route path="/register/employee" element={<EmployeeRegisterPage />} />
 
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/attendance" element={<AttendancePage />} />
+          <Route path="/employees" element={<EmployeesPage />} />
+          <Route path="/employees/:employeeId" element={<EmployeeDetailsPage />}/>
+
         </Routes>
       </AuraBackground>
     </BrowserRouter>
