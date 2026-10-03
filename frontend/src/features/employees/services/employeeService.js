@@ -153,7 +153,7 @@ const employees = [
   },
 ];
 
-function delay(data, milliseconds = 300) {
+function delay(data, milliseconds = 100) {
   return new Promise((resolve) => {
     setTimeout(() => resolve(data), milliseconds);
   });
@@ -258,4 +258,60 @@ export async function getEmployeeDetails(employeeId) {
   };
 
   return delay(details);
+}
+
+export async function createEmployee(employeeData) {
+  const newEmployee = {
+    ...employeeData,
+    id: employeeData.employeeId,
+    attendance: {
+      present: 0,
+      late: 0,
+      absent: 0,
+      leave: 0,
+    },
+  };
+
+  employees.push(newEmployee);
+
+  return delay(newEmployee);
+}
+
+export async function updateEmployee(employeeId, employeeData) {
+  const index = employees.findIndex(
+    (employee) => employee.id === employeeId,
+  );
+
+  if (index === -1) {
+    throw new Error("Employee not found");
+  }
+
+  employees[index] = {
+    ...employees[index],
+    ...employeeData,
+    id: employeeId,
+  };
+
+  return delay(employees[index]);
+}
+
+export async function updateEmployeeStatus(employeeId, status) {
+  const index = employees.findIndex(
+    (employee) => employee.id === employeeId,
+  );
+
+  if (index === -1) {
+    throw new Error("Employee not found");
+  }
+
+  if (!["Active", "Inactive"].includes(status)) {
+    throw new Error("Invalid employee status");
+  }
+
+  employees[index] = {
+    ...employees[index],
+    status,
+  };
+
+  return delay(employees[index]);
 }

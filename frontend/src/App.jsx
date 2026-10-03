@@ -10,7 +10,8 @@ import DashboardPage from "@/features/dashboard/pages/DashboardPage";
 import AttendancePage from "./features/attendance/pages/AttendancePage";
 import EmployeesPage from "./features/employees/pages/EmployeesPage";
 import EmployeeDetailsPage from "@/features/employees/pages/EmployeeDetailsPage";
-
+import AddEmployeePage from "@/features/employees/pages/AddEmployeePage";
+import EditEmployeePage from "@/features/employees/pages/EditEmployeePage";
 
 function App() {
   return (
@@ -29,6 +30,8 @@ function App() {
           <Route path="/attendance" element={<AttendancePage />} />
           <Route path="/employees" element={<EmployeesPage />} />
           <Route path="/employees/:employeeId" element={<EmployeeDetailsPage />}/>
+          <Route path="/employees/new" element={<AddEmployeePage />} />
+          <Route path="/employees/:employeeId/edit" element={<EditEmployeePage />}/>
 
         </Routes>
       </AuraBackground>

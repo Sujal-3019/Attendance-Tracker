@@ -1,5 +1,19 @@
-import { Eye, MoreHorizontal, Pencil } from "lucide-react";
+import {
+  Eye,
+  MoreHorizontal,
+  Pencil,
+  UserCheck,
+  UserX,
+} from "lucide-react";
 import { Link } from "react-router-dom";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 function getInitials(name) {
   return name
@@ -80,99 +94,158 @@ function EmployeeTable({ employees }) {
           </thead>
 
           <tbody className="divide-y divide-border/50">
-            {employees.map((employee) => (
-              <tr
-                key={employee.id}
-                className="transition-colors hover:bg-muted/35"
-              >
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background">
-                      {getInitials(employee.name)}
-                    </div>
+            {employees.map((employee) => {
+              const isActive = employee.status === "Active";
 
-                    <div className="min-w-0">
-                      <p className="font-medium">{employee.name}</p>
+              return (
+                <tr
+                  key={employee.id}
+                  className="transition-colors hover:bg-muted/35"
+                >
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background">
+                        {getInitials(employee.name)}
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="font-medium">{employee.name}</p>
+
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {employee.designation}
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="px-5 py-4">
+                    <div>
+                      <p className="font-medium">{employee.department}</p>
 
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {employee.designation}
+                        {employee.employmentType}
                       </p>
                     </div>
-                  </div>
-                </td>
+                  </td>
 
-                <td className="px-5 py-4">
-                  <div>
-                    <p className="font-medium">{employee.department}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {employee.employmentType}
-                    </p>
-                  </div>
-                </td>
-
-                <td className="px-5 py-4">
-                  <span
-                    className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getWorkModeClasses(
-                      employee.workMode,
-                    )}`}
-                  >
-                    {employee.workMode}
-                  </span>
-                </td>
-
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="font-medium text-emerald-700 dark:text-emerald-400">
-                      {employee.attendance.present} present
+                  <td className="px-5 py-4">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getWorkModeClasses(
+                        employee.workMode,
+                      )}`}
+                    >
+                      {employee.workMode}
                     </span>
+                  </td>
 
-                    <span className="text-muted-foreground">·</span>
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                        {employee.attendance.present} present
+                      </span>
 
-                    <span className="text-muted-foreground">
-                      {employee.attendance.late} late
+                      <span className="text-muted-foreground">·</span>
+
+                      <span className="text-muted-foreground">
+                        {employee.attendance.late} late
+                      </span>
+                    </div>
+                  </td>
+
+                  <td className="px-5 py-4">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getStatusClasses(
+                        employee.status,
+                      )}`}
+                    >
+                      {employee.status}
                     </span>
-                  </div>
-                </td>
+                  </td>
 
-                <td className="px-5 py-4">
-                  <span
-                    className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getStatusClasses(
-                      employee.status,
-                    )}`}
-                  >
-                    {employee.status}
-                  </span>
-                </td>
+                  <td className="px-5 py-4">
+                    <div className="flex items-center justify-end gap-1">
+                      {/* View */}
+                      <Link
+                        to={`/employees/${employee.id}`}
+                        className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        aria-label={`View ${employee.name}`}
+                      >
+                        <Eye className="size-4" />
+                      </Link>
 
-                <td className="px-5 py-4">
-                  <div className="flex items-center justify-end gap-1">
-                    <Link
-                      to={`/employees/${employee.id}`}
-                      className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      aria-label={`View ${employee.name}`}
-                    >
-                      <Eye className="size-4" />
-                    </Link>
+                      {/* Edit */}
+                      <Link
+                        to={`/employees/${employee.id}/edit`}
+                        className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        aria-label={`Edit ${employee.name}`}
+                      >
+                        <Pencil className="size-4" />
+                      </Link>
 
-                    <button
-                      type="button"
-                      className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      aria-label={`Edit ${employee.name}`}
-                    >
-                      <Pencil className="size-4" />
-                    </button>
+                      {/* More */}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <button
+                              type="button"
+                              className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              aria-label={`More actions for ${employee.name}`}
+                            />
+                          }
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </DropdownMenuTrigger>
 
-                    <button
-                      type="button"
-                      className="inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      aria-label={`More actions for ${employee.name}`}
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem
+                            render={
+                              <Link to={`/employees/${employee.id}`} />
+                            }
+                          >
+                            <Eye className="size-4" />
+                            View employee
+                          </DropdownMenuItem>
+
+                          <DropdownMenuItem
+                            render={
+                              <Link
+                                to={`/employees/${employee.id}/edit`}
+                              />
+                            }
+                          >
+                            <Pencil className="size-4" />
+                            Edit employee
+                          </DropdownMenuItem>
+
+                          <DropdownMenuSeparator />
+
+                          <DropdownMenuItem
+                            variant={isActive ? "destructive" : "default"}
+                            onClick={() => {
+                              // Status confirmation will be connected
+                              // in the next step.
+                              console.log(
+                                `${isActive ? "Deactivate" : "Activate"} ${
+                                  employee.name
+                                }`,
+                              );
+                            }}
+                          >
+                            {isActive ? (
+                              <UserX className="size-4" />
+                            ) : (
+                              <UserCheck className="size-4" />
+                            )}
+
+                            {isActive ? "Deactivate" : "Activate"}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
