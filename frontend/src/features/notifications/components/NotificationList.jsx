@@ -1,12 +1,13 @@
 import {
-    Users,
     AlertTriangle,
     Bell,
     Check,
     Clock3,
     FileCheck2,
     MapPin,
+    Users,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 function getNotificationIcon(type) {
     const icons = {
@@ -46,10 +47,7 @@ function getNotificationIconStyle(type) {
             "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
     };
 
-    return (
-        styles[type] ||
-        "bg-muted text-muted-foreground"
-    );
+    return styles[type] || "bg-muted text-muted-foreground";
 }
 
 function formatNotificationDate(dateString) {
@@ -69,6 +67,34 @@ function NotificationList({
     loading = false,
     onMarkAsRead,
 }) {
+    const navigate = useNavigate();
+
+    function handleReview(notification) {
+        if (notification.status === "Unread") {
+            onMarkAsRead?.(notification);
+        }
+
+        if (
+            notification.type === "ATTENDANCE_CORRECTION" &&
+            notification.metadata?.correctionRequestId
+        ) {
+            navigate(
+                `/attendance?correction=${notification.metadata.correctionRequestId}`,
+            );
+
+            return;
+        }
+
+        if (
+            notification.type === "FORGOT_CHECKOUT" &&
+            notification.metadata?.forgotCheckoutId
+        ) {
+            navigate(
+                `/attendance?forgotCheckout=${notification.metadata.forgotCheckoutId}`,
+            );
+        }
+    }
+
     if (loading) {
         return (
             <section className="rounded-2xl border bg-background/80 shadow-sm">
@@ -116,17 +142,13 @@ function NotificationList({
         <section className="overflow-hidden rounded-2xl border bg-background/80 shadow-sm">
             <div className="divide-y">
                 {notifications.map((notification) => {
-                    const Icon = getNotificationIcon(
+                    const Icon = getNotificationIcon(notification.type);
+
+                    const iconStyle = getNotificationIconStyle(
                         notification.type,
                     );
 
-                    const iconStyle =
-                        getNotificationIconStyle(
-                            notification.type,
-                        );
-
-                    const isUnread =
-                        notification.status === "Unread";
+                    const isUnread = notification.status === "Unread";
 
                     return (
                         <div
@@ -143,7 +165,7 @@ function NotificationList({
 
                                 <div className="min-w-0 flex-1">
                                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex flex-wrap items-center gap-2">
                                             {isUnread && (
                                                 <span className="size-2 rounded-full bg-primary" />
                                             )}
@@ -187,7 +209,7 @@ function NotificationList({
                                             <button
                                                 type="button"
                                                 onClick={() =>
-                                                    onMarkAsRead(notification)
+                                                    onMarkAsRead?.(notification)
                                                 }
                                                 className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-background px-3 text-xs font-medium transition-colors hover:bg-muted"
                                             >
@@ -199,10 +221,13 @@ function NotificationList({
                                         {notification.actionRequired && (
                                             <button
                                                 type="button"
+                                                onClick={() => handleReview(notification)}
                                                 className="inline-flex h-8 items-center gap-1.5 rounded-md border bg-background px-3 text-xs font-medium transition-colors hover:bg-muted"
                                             >
-                                                {notification.type === "ATTENDANCE_ANOMALY" ||
-                                                    notification.type === "FORGOT_CHECKOUT" ? (
+                                                {notification.type ===
+                                                    "ATTENDANCE_ANOMALY" ||
+                                                    notification.type ===
+                                                    "FORGOT_CHECKOUT" ? (
                                                     <MapPin className="size-3.5" />
                                                 ) : (
                                                     <Check className="size-3.5" />
