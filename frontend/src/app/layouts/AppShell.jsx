@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
-
+import NotificationBell from "@/features/notifications/components/NotificationBell";
 import { Button } from "@/components/ui/button";
 import ThemeToggle from "@/components/shared/ThemeToggle";
 
@@ -113,6 +113,7 @@ function AppShell({ children }) {
                     </div>
 
                     <div className="flex items-center gap-1.5">
+                        <NotificationBell />
                         <ThemeToggle />
 
                         <div className="ml-1 hidden h-8 w-px bg-border sm:block" />
