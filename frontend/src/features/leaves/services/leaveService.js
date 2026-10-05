@@ -1,3 +1,5 @@
+import { getLeavePolicies } from "./leavePolicyService";
+
 const leaveRequests = [
   {
     id: "LR-001",
@@ -168,6 +170,47 @@ const leaveBalances = [
   },
 ];
 
+const leaveTypeToBalanceKey = {
+  "Casual Leave": "casual",
+  "Sick Leave": "sick",
+  "Earned Leave": "earned",
+};
+
+async function getPolicyForLeaveType(leaveType) {
+  const policies = await getLeavePolicies();
+
+  return policies.find(
+    (policy) =>
+      policy.name.toLowerCase() === leaveType.toLowerCase(),
+  );
+}
+
+async function validateLeaveRequest(request) {
+  const policy = await getPolicyForLeaveType(
+    request.leaveType,
+  );
+
+  if (!policy) {
+    throw new Error(
+      `No leave policy found for ${request.leaveType}`,
+    );
+  }
+
+  if (policy.status !== "Active") {
+    throw new Error(
+      `${request.leaveType} is currently inactive`,
+    );
+  }
+
+  if (request.days > policy.maxConsecutiveDays) {
+    throw new Error(
+      `${request.leaveType} allows a maximum of ${policy.maxConsecutiveDays} consecutive days`,
+    );
+  }
+
+  return policy;
+}
+
 function delay(data, milliseconds = 300) {
   return new Promise((resolve) => {
     setTimeout(() => resolve(data), milliseconds);
@@ -219,27 +262,76 @@ export async function getLeaveRequestById(requestId) {
 }
 
 export async function approveLeave(requestId) {
-  const index = leaveRequests.findIndex(
+  const requestIndex = leaveRequests.findIndex(
     (request) => request.id === requestId,
   );
 
-  if (index === -1) {
+  if (requestIndex === -1) {
     throw new Error("Leave request not found");
   }
 
-  if (leaveRequests[index].status !== "Pending") {
-    throw new Error("Only pending leave requests can be approved");
+  const request = leaveRequests[requestIndex];
+
+  if (request.status !== "Pending") {
+    throw new Error(
+      "Only pending leave requests can be approved",
+    );
   }
 
-  leaveRequests[index] = {
-    ...leaveRequests[index],
+  const policy = await validateLeaveRequest(request);
+
+  const balanceKey =
+    leaveTypeToBalanceKey[request.leaveType];
+
+  if (balanceKey) {
+    const balanceIndex = leaveBalances.findIndex(
+      (employee) =>
+        employee.employeeId === request.employeeId,
+    );
+
+    if (balanceIndex === -1) {
+      throw new Error(
+        "Leave balance not found for this employee",
+      );
+    }
+
+    const balance =
+      leaveBalances[balanceIndex][balanceKey];
+
+    if (balance.remaining < request.days) {
+      throw new Error(
+        `Insufficient ${request.leaveType.toLowerCase()} balance`,
+      );
+    }
+
+    leaveBalances[balanceIndex] = {
+      ...leaveBalances[balanceIndex],
+      [balanceKey]: {
+        ...balance,
+        used: balance.used + request.days,
+        remaining: balance.remaining - request.days,
+      },
+    };
+  }
+
+  leaveRequests[requestIndex] = {
+    ...request,
     status: "Approved",
     reviewedOn: new Date().toISOString().split("T")[0],
     reviewedBy: "Demo Admin",
     rejectionReason: null,
   };
 
-  return delay({ ...leaveRequests[index] });
+  return delay({
+    ...leaveRequests[requestIndex],
+    policy: {
+      id: policy.id,
+      name: policy.name,
+      paid: policy.paid,
+      carryForward: policy.carryForward,
+      maxConsecutiveDays: policy.maxConsecutiveDays,
+    },
+  });
 }
 
 export async function rejectLeave(requestId, rejectionReason) {

@@ -8,6 +8,8 @@ import LeaveStats from "../components/LeaveStats";
 import { getLeaveBalances, getLeaveRequests, getLeaveStats } from "../services/leaveService";
 import LeaveRequestDialog from "../components/LeaveRequestDialog";
 import LeaveBalanceTable from "../components/LeaveBalanceTable";
+import LeavePolicies from "../components/LeavePolicies";
+import { getLeavePolicies } from "../services/leavePolicyService";
 
 
 function LeavesPage() {
@@ -15,11 +17,22 @@ function LeavesPage() {
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
     const [balances, setBalances] = useState([]);
+    const [policies, setPolicies] = useState([]);
 
     const [search, setSearch] = useState("");
     const [department, setDepartment] = useState("");
     const [leaveType, setLeaveType] = useState("");
     const [status, setStatus] = useState("");
+
+    async function loadPolicies() {
+        const policyData = await getLeavePolicies();
+        setPolicies(policyData);
+    }
+
+    async function handlePoliciesChanged() {
+        const policyData = await getLeavePolicies();
+        setPolicies(policyData);
+    }
 
     useEffect(() => {
         let mounted = true;
@@ -93,8 +106,13 @@ function LeavesPage() {
             ),
         );
 
-        const updatedStats = await getLeaveStats();
+        const [updatedStats, updatedBalances] = await Promise.all([
+            getLeaveStats(),
+            getLeaveBalances(),
+        ]);
+
         setStats(updatedStats);
+        setBalances(updatedBalances);
     }
 
     return (
@@ -247,6 +265,7 @@ function LeavesPage() {
 
                 {/* Leave Balances */}
                 <LeaveBalanceTable balances={balances} />
+                <LeavePolicies policies={policies} onPoliciesChanged={handlePoliciesChanged} />
             </div>
         </AppShell>
     );
