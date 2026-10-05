@@ -5,6 +5,7 @@ import {
     Menu,
     Settings,
     Users,
+    WalletCards,
     X,
 } from "lucide-react";
 import { useState } from "react";
@@ -33,6 +34,11 @@ const navigation = [
         label: "Leaves",
         href: "/leaves",
         icon: CalendarDays,
+    },
+    {
+        label: "Payroll",
+        href: "/payroll",
+        icon: WalletCards,
     },
     {
         label: "Settings",
