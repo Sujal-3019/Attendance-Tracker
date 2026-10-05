@@ -13,6 +13,7 @@ import EmployeeDetailsPage from "@/features/employees/pages/EmployeeDetailsPage"
 import AddEmployeePage from "@/features/employees/pages/AddEmployeePage";
 import EditEmployeePage from "@/features/employees/pages/EditEmployeePage";
 import LeavesPage from "@/features/leaves/pages/LeavesPage";
+import SettingsPage from "@/features/settings/pages/SettingsPage";
 
 function App() {
   return (
@@ -34,6 +35,7 @@ function App() {
           <Route path="/employees/new" element={<AddEmployeePage />} />
           <Route path="/employees/:employeeId/edit" element={<EditEmployeePage />}/>
           <Route path="/leaves" element={<LeavesPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
 
         </Routes>
       </AuraBackground>
