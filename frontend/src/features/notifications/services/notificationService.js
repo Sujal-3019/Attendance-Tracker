@@ -106,6 +106,7 @@ const notifications = [
         createdAt: "2026-10-04T19:10:00",
         actionRequired: true,
         metadata: {
+            overtimeRequestId: "OT-001",
             employeeCount: 3,
             overtimeHours: 14,
         },
