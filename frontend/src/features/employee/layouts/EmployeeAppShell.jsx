@@ -49,7 +49,7 @@ export default function EmployeeAppShell({ children }) {
           [
             "group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-all duration-200",
             isActive
-              ? "border border-cyan-200/70 bg-gradient-to-r from-cyan-50 to-blue-50 text-cyan-900 shadow-sm dark:border-cyan-800/60 dark:from-cyan-950/70 dark:to-blue-950/50 dark:text-cyan-100"
+              ? "border border-cyan-200/70 bg-linear-to-r from-cyan-50 to-blue-50 text-cyan-900 shadow-sm dark:border-cyan-800/60 dark:from-cyan-950/70 dark:to-blue-950/50 dark:text-cyan-100"
               : "border border-transparent text-slate-600 hover:border-cyan-100 hover:bg-white/70 hover:text-slate-900 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800/70 dark:hover:text-white",
           ].join(" ")
         }
@@ -71,8 +71,8 @@ export default function EmployeeAppShell({ children }) {
         className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
       >
         <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-cyan-200/30 blur-3xl dark:bg-cyan-700/10" />
-        <div className="absolute right-[-8rem] top-24 h-96 w-96 rounded-full bg-blue-200/25 blur-3xl dark:bg-blue-700/10" />
-        <div className="absolute bottom-[-10rem] left-[35%] h-96 w-96 rounded-full bg-teal-200/20 blur-3xl dark:bg-teal-700/10" />
+        <div className="absolute -right-32 top-24 h-96 w-96 rounded-full bg-blue-200/25 blur-3xl dark:bg-blue-700/10" />
+        <div className="absolute -bottom-40 left-[35%] h-96 w-96 rounded-full bg-teal-200/20 blur-3xl dark:bg-teal-700/10" />
       </div>
 
       {/* Mobile and tablet header */}
@@ -91,7 +91,7 @@ export default function EmployeeAppShell({ children }) {
             {mobileMenuOpen ? <X size={21} /> : <Menu size={21} />}
           </Button>
 
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-sm">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-cyan-500 to-blue-600 text-white shadow-sm">
             <LayoutDashboard size={18} />
           </div>
 
@@ -134,7 +134,7 @@ export default function EmployeeAppShell({ children }) {
       >
         <div className="flex h-20 shrink-0 items-center justify-between border-b border-slate-200/60 px-5 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-900/10">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-900/10">
               <LayoutDashboard size={20} />
             </div>
             <div>
@@ -171,7 +171,7 @@ export default function EmployeeAppShell({ children }) {
 
         <div className="shrink-0 border-t border-slate-200/60 p-4 dark:border-slate-800">
           <div className="mb-3 flex min-w-0 items-center gap-3 rounded-xl border border-white/80 bg-white/60 p-3 dark:border-slate-700 dark:bg-slate-800/50">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-100 to-blue-100 font-semibold text-cyan-800 dark:from-cyan-900 dark:to-blue-900 dark:text-cyan-100">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-cyan-100 to-blue-100 font-semibold text-cyan-800 dark:from-cyan-900 dark:to-blue-900 dark:text-cyan-100">
               {displayName.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
