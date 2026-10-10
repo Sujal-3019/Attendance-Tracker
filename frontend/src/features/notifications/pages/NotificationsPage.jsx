@@ -1,43 +1,30 @@
+
 import { CheckCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import AppShell from "@/app/layouts/AppShell";
 import { Button } from "@/components/ui/button";
 
 import NotificationList from "../components/NotificationList";
 import {
-  getNotifications,
-  markAllNotificationsAsRead,
-  markNotificationAsRead,
-} from "../services/notificationService";
+  useMarkAllNotificationsAsRead,
+  useMarkNotificationAsRead,
+  useNotifications,
+} from "../hooks/useNotifications";
 
 function NotificationsPage() {
-  const [notifications, setNotifications] = useState([]);
   const [filter, setFilter] = useState("All");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
-  useEffect(() => {
-    async function loadNotifications() {
-      try {
-        setLoading(true);
-        setError("");
+  const {
+    data: notifications = [],
+    isPending,
+    isError,
+    error,
+    refetch,
+  } = useNotifications();
 
-        const data = await getNotifications();
-
-        setNotifications(data);
-      } catch (loadError) {
-        setError(
-          loadError.message ||
-            "Unable to load notifications.",
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadNotifications();
-  }, []);
+  const markOneMutation = useMarkNotificationAsRead();
+  const markAllMutation = useMarkAllNotificationsAsRead();
 
   const unreadCount = notifications.filter(
     (notification) => notification.status === "Unread",
@@ -46,8 +33,7 @@ function NotificationsPage() {
   const filteredNotifications = useMemo(() => {
     if (filter === "Unread") {
       return notifications.filter(
-        (notification) =>
-          notification.status === "Unread",
+        (notification) => notification.status === "Unread",
       );
     }
 
@@ -59,56 +45,33 @@ function NotificationsPage() {
 
     if (filter === "High Priority") {
       return notifications.filter(
-        (notification) =>
-          notification.priority === "High",
+        (notification) => notification.priority === "High",
       );
     }
 
     return notifications;
   }, [notifications, filter]);
 
-  async function handleMarkAsRead(notification) {
-    try {
-      const updatedNotification =
-        await markNotificationAsRead(notification.id);
-
-      setNotifications((currentNotifications) =>
-        currentNotifications.map((item) =>
-          item.id === updatedNotification.id
-            ? updatedNotification
-            : item,
-        ),
-      );
-    } catch (updateError) {
-      setError(
-        updateError.message ||
-          "Unable to update notification.",
-      );
+  function handleMarkAsRead(notification) {
+    if (
+      notification.status !== "Unread" ||
+      markOneMutation.isPending
+    ) {
+      return;
     }
+
+    markOneMutation.mutate(notification.id);
   }
 
-  async function handleMarkAllAsRead() {
-    try {
-      await markAllNotificationsAsRead();
-
-      setNotifications((currentNotifications) =>
-        currentNotifications.map((notification) => ({
-          ...notification,
-          status: "Read",
-        })),
-      );
-    } catch (updateError) {
-      setError(
-        updateError.message ||
-          "Unable to update notifications.",
-      );
+  function handleMarkAllAsRead() {
+    if (!markAllMutation.isPending) {
+      markAllMutation.mutate();
     }
   }
 
   return (
     <AppShell>
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-medium text-muted-foreground">
@@ -129,39 +92,56 @@ function NotificationsPage() {
             <Button
               variant="outline"
               onClick={handleMarkAllAsRead}
+              disabled={markAllMutation.isPending}
             >
               <CheckCheck className="size-4" />
-              Mark all as read
+              {markAllMutation.isPending
+                ? "Updating..."
+                : "Mark all as read"}
             </Button>
           )}
         </div>
 
-        {error && (
+        {isError && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            <span>
+              {error?.message || "Unable to load notifications."}
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+            >
+              Try again
+            </Button>
+          </div>
+        )}
+
+        {(markOneMutation.isError || markAllMutation.isError) && (
           <div
             role="alert"
             className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
           >
-            {error}
+            {markOneMutation.error?.message ||
+              markAllMutation.error?.message ||
+              "Unable to update notifications. Please try again."}
           </div>
         )}
 
-        {/* Summary */}
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <div className="rounded-2xl border bg-background/80 p-5 shadow-sm">
-            <p className="text-sm text-muted-foreground">
-              Total
-            </p>
-
+            <p className="text-sm text-muted-foreground">Total</p>
             <p className="mt-1 text-2xl font-semibold">
               {notifications.length}
             </p>
           </div>
 
           <div className="rounded-2xl border bg-background/80 p-5 shadow-sm">
-            <p className="text-sm text-muted-foreground">
-              Unread
-            </p>
-
+            <p className="text-sm text-muted-foreground">Unread</p>
             <p className="mt-1 text-2xl font-semibold">
               {unreadCount}
             </p>
@@ -171,12 +151,10 @@ function NotificationsPage() {
             <p className="text-sm text-muted-foreground">
               Action required
             </p>
-
             <p className="mt-1 text-2xl font-semibold">
               {
                 notifications.filter(
-                  (notification) =>
-                    notification.actionRequired,
+                  (notification) => notification.actionRequired,
                 ).length
               }
             </p>
@@ -186,7 +164,6 @@ function NotificationsPage() {
             <p className="text-sm text-muted-foreground">
               High priority
             </p>
-
             <p className="mt-1 text-2xl font-semibold">
               {
                 notifications.filter(
@@ -198,7 +175,6 @@ function NotificationsPage() {
           </div>
         </div>
 
-        {/* Filters */}
         <div className="flex flex-wrap gap-2">
           {[
             "All",
@@ -218,10 +194,9 @@ function NotificationsPage() {
           ))}
         </div>
 
-        {/* Notification list */}
         <NotificationList
           notifications={filteredNotifications}
-          loading={loading}
+          loading={isPending}
           onMarkAsRead={handleMarkAsRead}
         />
       </div>

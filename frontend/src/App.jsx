@@ -1,48 +1,106 @@
+
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 import AuraBackground from "@/components/shared/AuraBackground";
+
 import LandingPage from "@/features/landing/pages/LandingPage";
 import LoginPage from "@/features/auth/pages/LoginPage";
 import RegisterPage from "@/features/auth/pages/RegisterPage";
 import AdminRegisterPage from "@/features/auth/pages/AdminRegisterPage";
 import EmployeeRegisterPage from "@/features/auth/pages/EmployeeRegisterPage";
+import ProtectedRoute from "@/features/auth/components/ProtectedRoute";
+
 import DashboardPage from "@/features/dashboard/pages/DashboardPage";
-import AttendancePage from "./features/attendance/pages/AttendancePage";
-import EmployeesPage from "./features/employees/pages/EmployeesPage";
+import AttendancePage from "@/features/attendance/pages/AttendancePage";
+import EmployeesPage from "@/features/employees/pages/EmployeesPage";
 import EmployeeDetailsPage from "@/features/employees/pages/EmployeeDetailsPage";
 import AddEmployeePage from "@/features/employees/pages/AddEmployeePage";
 import EditEmployeePage from "@/features/employees/pages/EditEmployeePage";
 import LeavesPage from "@/features/leaves/pages/LeavesPage";
 import SettingsPage from "@/features/settings/pages/SettingsPage";
-import PayrollPage from "./features/payroll/pages/PayrollPage";
-import EmployeePayrollDetailsPage from "./features/payroll/components/EmployeePayrollDetailsPage";
-import NotificationsPage from "./features/notifications/pages/NotificationsPage";
+import PayrollPage from "@/features/payroll/pages/PayrollPage";
+import EmployeePayrollDetailsPage from "@/features/payroll/components/EmployeePayrollDetailsPage";
+import NotificationsPage from "@/features/notifications/pages/NotificationsPage";
+
+import EmployeeDashboardPage from "@/features/employee/dashboard/EmployeeDashboardPage";
+import EmployeeAttendancePage from "./features/employee/attendance/pages/EmployeeAttendancePage";
+import EmployeeLeavesPage from "./features/employee/leaves/pages/EmployeeLeavesPage";
+import EmployeePayrollPage from "./features/employee/payroll/pages/EmployeePayrollPage";
+import EmployeeProfilePage from "./features/employee/profile/pages/EmployeeProfilePage";
 
 function App() {
   return (
     <BrowserRouter>
       <AuraBackground>
         <Routes>
+          {/* Public routes */}
           <Route path="/" element={<LandingPage />} />
-
           <Route path="/login" element={<LoginPage />} />
-
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/register/admin" element={<AdminRegisterPage />} />
-          <Route path="/register/employee" element={<EmployeeRegisterPage />} />
+          <Route
+            path="/register/employee"
+            element={<EmployeeRegisterPage />}
+          />
 
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/attendance" element={<AttendancePage />} />
-          <Route path="/employees" element={<EmployeesPage />} />
-          <Route path="/employees/:employeeId" element={<EmployeeDetailsPage />}/>
-          <Route path="/employees/new" element={<AddEmployeePage />} />
-          <Route path="/employees/:employeeId/edit" element={<EditEmployeePage />}/>
-          <Route path="/leaves" element={<LeavesPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/payroll" element={<PayrollPage />} />
-          <Route path="/payroll/:employeeId" element={<EmployeePayrollDetailsPage />}/>
-          <Route path="/notifications" element={<NotificationsPage />}/>
+          {/* Admin-only routes */}
+          <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/attendance" element={<AttendancePage />} />
+            <Route path="/employees" element={<EmployeesPage />} />
+            <Route
+              path="/employees/new"
+              element={<AddEmployeePage />}
+            />
+            <Route
+              path="/employees/:employeeId/edit"
+              element={<EditEmployeePage />}
+            />
+            <Route
+              path="/employees/:employeeId"
+              element={<EmployeeDetailsPage />}
+            />
+            <Route path="/leaves" element={<LeavesPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/payroll" element={<PayrollPage />} />
+            <Route
+              path="/payroll/:employeeId"
+              element={<EmployeePayrollDetailsPage />}
+            />
+            <Route
+              path="/notifications"
+              element={<NotificationsPage />}
+            />
+          </Route>
 
+          {/* Employee-only routes */}
+          <Route element={<ProtectedRoute allowedRoles={["employee"]} />}>
+            <Route
+              path="/employee/dashboard"
+              element={<EmployeeDashboardPage />}
+            />
+
+            <Route
+              path="/employee/attendance"
+              element={<EmployeeAttendancePage />}
+            />
+
+            <Route
+              path="/employee/leaves"
+              element={<EmployeeLeavesPage />}
+            />
+
+            <Route
+              path="/employee/payroll"
+              element={<EmployeePayrollPage />}
+            />
+
+            <Route
+              path="/employee/profile"
+              element={<EmployeeProfilePage />}
+            />
+
+          </Route>
         </Routes>
       </AuraBackground>
     </BrowserRouter>

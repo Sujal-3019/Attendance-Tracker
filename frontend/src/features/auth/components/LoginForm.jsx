@@ -9,9 +9,15 @@ import { Input } from "@/components/ui/input";
 import { loginSchema } from "../schemas/authSchemas";
 import { loginUser } from "../services/authService";
 
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/features/auth/context/AuthContext";
+
 function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitError, setSubmitError] = useState("");
+
+  const navigate = useNavigate();
+  const { login } = useAuth();
 
   const {
     register,
@@ -31,14 +37,17 @@ function LoginForm() {
     try {
       const result = await loginUser(data);
 
-      console.log("Login successful:", result);
+      login(result.user);
 
-      // Temporary handling.
-      // Real session management will be implemented with the backend.
-      alert(`Welcome back, ${result.user.name}.`);
+      if (result.user.role === "admin") {
+        navigate("/dashboard", { replace: true });
+      } else if (result.user.role === "employee") {
+        navigate("/employee/dashboard", { replace: true });
+      } else {
+        login(null);
+        setSubmitError("Your account has an unsupported role.");
+      }
     } catch (error) {
-      console.error("Login failed:", error);
-
       setSubmitError(
         error instanceof Error
           ? error.message

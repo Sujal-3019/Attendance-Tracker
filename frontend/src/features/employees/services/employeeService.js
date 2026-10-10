@@ -1,3 +1,4 @@
+
 const employees = [
   {
     id: "EMP-001",
@@ -11,12 +12,7 @@ const employees = [
     location: "Head Office",
     joiningDate: "2025-07-14",
     status: "Active",
-    attendance: {
-      present: 21,
-      late: 2,
-      absent: 1,
-      leave: 1,
-    },
+    attendance: { present: 21, late: 2, absent: 1, leave: 1 },
   },
   {
     id: "EMP-002",
@@ -30,12 +26,7 @@ const employees = [
     location: "Head Office",
     joiningDate: "2025-08-04",
     status: "Active",
-    attendance: {
-      present: 20,
-      late: 1,
-      absent: 0,
-      leave: 2,
-    },
+    attendance: { present: 20, late: 1, absent: 0, leave: 2 },
   },
   {
     id: "EMP-003",
@@ -49,12 +40,7 @@ const employees = [
     location: "Head Office",
     joiningDate: "2025-06-21",
     status: "Active",
-    attendance: {
-      present: 19,
-      late: 3,
-      absent: 2,
-      leave: 1,
-    },
+    attendance: { present: 19, late: 3, absent: 2, leave: 1 },
   },
   {
     id: "EMP-004",
@@ -68,12 +54,7 @@ const employees = [
     location: "Head Office",
     joiningDate: "2024-11-18",
     status: "Active",
-    attendance: {
-      present: 22,
-      late: 0,
-      absent: 0,
-      leave: 1,
-    },
+    attendance: { present: 22, late: 0, absent: 0, leave: 1 },
   },
   {
     id: "EMP-005",
@@ -87,12 +68,7 @@ const employees = [
     location: "Head Office",
     joiningDate: "2025-01-13",
     status: "Active",
-    attendance: {
-      present: 18,
-      late: 4,
-      absent: 2,
-      leave: 2,
-    },
+    attendance: { present: 18, late: 4, absent: 2, leave: 2 },
   },
   {
     id: "EMP-006",
@@ -106,12 +82,7 @@ const employees = [
     location: "Remote",
     joiningDate: "2025-09-01",
     status: "Active",
-    attendance: {
-      present: 20,
-      late: 1,
-      absent: 1,
-      leave: 1,
-    },
+    attendance: { present: 20, late: 1, absent: 1, leave: 1 },
   },
   {
     id: "EMP-007",
@@ -125,12 +96,7 @@ const employees = [
     location: "Head Office",
     joiningDate: "2024-08-26",
     status: "Inactive",
-    attendance: {
-      present: 16,
-      late: 2,
-      absent: 3,
-      leave: 2,
-    },
+    attendance: { present: 16, late: 2, absent: 3, leave: 2 },
   },
   {
     id: "EMP-008",
@@ -144,12 +110,7 @@ const employees = [
     location: "Head Office",
     joiningDate: "2025-03-10",
     status: "Active",
-    attendance: {
-      present: 21,
-      late: 1,
-      absent: 0,
-      leave: 1,
-    },
+    attendance: { present: 21, late: 1, absent: 0, leave: 1 },
   },
 ];
 
@@ -159,33 +120,44 @@ function delay(data, milliseconds = 100) {
   });
 }
 
+function clone(data) {
+  return data == null ? data : structuredClone(data);
+}
+
+export class EmployeeServiceError extends Error {
+  constructor(message, code = "EMPLOYEE_SERVICE_ERROR") {
+    super(message);
+    this.name = "EmployeeServiceError";
+    this.code = code;
+  }
+}
+
+function findEmployeeIndex(employeeId) {
+  return employees.findIndex((employee) => employee.id === employeeId);
+}
+
 export async function getEmployees() {
-  return delay([...employees]);
+  return delay(clone(employees));
 }
 
 export async function getEmployeeById(employeeId) {
   const employee = employees.find((item) => item.id === employeeId);
-
-  return delay(employee ?? null);
+  return delay(clone(employee ?? null));
 }
 
 export async function getEmployeeStats() {
   const total = employees.length;
-  const active = employees.filter((employee) => employee.status === "Active").length;
+  const active = employees.filter(
+    (employee) => employee.status === "Active",
+  ).length;
   const inactive = employees.filter(
     (employee) => employee.status === "Inactive",
   ).length;
 
-  // Mock value for now.
-  // This will eventually come from the attendance/leave backend.
+  // Demo value until leave records are the source of truth.
   const onLeave = 2;
 
-  return delay({
-    total,
-    active,
-    inactive,
-    onLeave,
-  });
+  return delay({ total, active, inactive, onLeave });
 }
 
 export async function getEmployeeDetails(employeeId) {
@@ -197,9 +169,7 @@ export async function getEmployeeDetails(employeeId) {
 
   const details = {
     ...employee,
-
     manager: "Demo Admin",
-
     recentAttendance: [
       {
         date: "2026-10-03",
@@ -237,33 +207,43 @@ export async function getEmployeeDetails(employeeId) {
         status: "Present",
       },
     ],
-
     leaveSummary: {
-      casual: {
-        allocated: 12,
-        used: 3,
-        remaining: 9,
-      },
-      sick: {
-        allocated: 6,
-        used: 1,
-        remaining: 5,
-      },
-      earned: {
-        allocated: 15,
-        used: 2,
-        remaining: 13,
-      },
+      casual: { allocated: 12, used: 3, remaining: 9 },
+      sick: { allocated: 6, used: 1, remaining: 5 },
+      earned: { allocated: 15, used: 2, remaining: 13 },
     },
   };
 
-  return delay(details);
+  return delay(clone(details));
 }
 
 export async function createEmployee(employeeData) {
+  if (!employeeData || typeof employeeData !== "object") {
+    throw new EmployeeServiceError(
+      "Valid employee data is required.",
+      "INVALID_EMPLOYEE_DATA",
+    );
+  }
+
+  const id = employeeData.employeeId || employeeData.id;
+
+  if (!id) {
+    throw new EmployeeServiceError(
+      "An employee ID is required.",
+      "INVALID_EMPLOYEE_ID",
+    );
+  }
+
+  if (employees.some((employee) => employee.id === id)) {
+    throw new EmployeeServiceError(
+      "An employee with this ID already exists.",
+      "EMPLOYEE_ALREADY_EXISTS",
+    );
+  }
+
   const newEmployee = {
-    ...employeeData,
-    id: employeeData.employeeId,
+    ...clone(employeeData),
+    id,
     attendance: {
       present: 0,
       late: 0,
@@ -272,40 +252,51 @@ export async function createEmployee(employeeData) {
     },
   };
 
+  delete newEmployee.employeeId;
+
   employees.push(newEmployee);
 
-  return delay(newEmployee);
+  return delay(clone(newEmployee));
 }
 
 export async function updateEmployee(employeeId, employeeData) {
-  const index = employees.findIndex(
-    (employee) => employee.id === employeeId,
-  );
+  const index = findEmployeeIndex(employeeId);
 
   if (index === -1) {
-    throw new Error("Employee not found");
+    throw new EmployeeServiceError(
+      "Employee not found.",
+      "EMPLOYEE_NOT_FOUND",
+    );
   }
 
   employees[index] = {
     ...employees[index],
-    ...employeeData,
+    ...clone(employeeData),
     id: employeeId,
+    attendance: {
+      ...employees[index].attendance,
+      ...(employeeData.attendance || {}),
+    },
   };
 
-  return delay(employees[index]);
+  return delay(clone(employees[index]));
 }
 
 export async function updateEmployeeStatus(employeeId, status) {
-  const index = employees.findIndex(
-    (employee) => employee.id === employeeId,
-  );
+  const index = findEmployeeIndex(employeeId);
 
   if (index === -1) {
-    throw new Error("Employee not found");
+    throw new EmployeeServiceError(
+      "Employee not found.",
+      "EMPLOYEE_NOT_FOUND",
+    );
   }
 
   if (!["Active", "Inactive"].includes(status)) {
-    throw new Error("Invalid employee status");
+    throw new EmployeeServiceError(
+      "Invalid employee status.",
+      "INVALID_EMPLOYEE_STATUS",
+    );
   }
 
   employees[index] = {
@@ -313,5 +304,5 @@ export async function updateEmployeeStatus(employeeId, status) {
     status,
   };
 
-  return delay(employees[index]);
+  return delay(clone(employees[index]));
 }
