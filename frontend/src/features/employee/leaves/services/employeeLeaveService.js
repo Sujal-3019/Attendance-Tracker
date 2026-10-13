@@ -2,11 +2,28 @@
 const wait = (ms = 250) =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+
 const leaveBalances = [
-  { type: "Casual Leave", allowance: 12, used: 3 },
-  { type: "Sick Leave", allowance: 10, used: 2 },
-  { type: "Earned Leave", allowance: 15, used: 4 },
+  {
+    type: "Casual Leave",
+    allowance: 12,
+    used: 3,
+    paymentType: "Paid",
+  },
+  {
+    type: "Sick Leave",
+    allowance: 10,
+    used: 2,
+    paymentType: "Paid",
+  },
+  {
+    type: "Earned Leave",
+    allowance: 15,
+    used: 4,
+    paymentType: "Paid",
+  },
 ];
+
 
 let leaveRequests = [
   {
