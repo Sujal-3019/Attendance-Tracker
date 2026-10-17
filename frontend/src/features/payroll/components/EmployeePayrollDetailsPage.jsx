@@ -27,7 +27,7 @@ function EmployeePayrollDetailsPage() {
       } catch (loadError) {
         setError(
           loadError.message ||
-            "Unable to load employee payroll details.",
+          "Unable to load employee payroll details.",
         );
       } finally {
         setLoading(false);
@@ -41,14 +41,13 @@ function EmployeePayrollDetailsPage() {
     <AppShell>
       <div className="space-y-6">
         <div>
-          <Button
-            variant="ghost"
-            size="sm"
-            render={<Link to="/payroll" />}
+          <Link
+            to="/payroll"
+            className="inline-flex h-8 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
           >
             <ArrowLeft className="size-4" />
             Back to payroll
-          </Button>
+          </Link>
         </div>
 
         {loading && (

@@ -41,6 +41,7 @@ function PayrollPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [payrollRefresh, setPayrollRefresh] = useState(0);
 
   const [filters, setFilters] = useState({
     search: "",
@@ -59,9 +60,10 @@ function PayrollPage() {
         setError("");
 
         const [employeesData, summaryData] = await Promise.all([
-          getPayrollEmployees(),
-          getPayrollSummary(),
+          getPayrollEmployees(month, year),
+          getPayrollSummary(month, year),
         ]);
+
 
         if (cancelled) return;
 
@@ -85,7 +87,7 @@ function PayrollPage() {
     return () => {
       cancelled = true;
     };
-  }, [month, year]);
+  }, [month, year, payrollRefresh]);
 
   // Load overtime requests.
   useEffect(() => {
@@ -231,6 +233,10 @@ function PayrollPage() {
     );
 
     setSelectedOvertime(updatedRequest);
+  }
+
+  function handlePayrollFinalized() {
+    setPayrollRefresh((current) => current + 1);
   }
 
   function handleRunPayroll() {
@@ -490,13 +496,12 @@ function PayrollPage() {
                       </div>
 
                       <span
-                        className={`rounded-full px-2 py-1 text-[10px] font-medium ${
-                          request.overtimeStatus === "Approved"
-                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                            : request.overtimeStatus === "Rejected"
-                              ? "bg-destructive/10 text-destructive"
-                              : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                        }`}
+                        className={`rounded-full px-2 py-1 text-[10px] font-medium ${request.overtimeStatus === "Approved"
+                          ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                          : request.overtimeStatus === "Rejected"
+                            ? "bg-destructive/10 text-destructive"
+                            : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                          }`}
                       >
                         {request.overtimeStatus}
                       </span>
@@ -558,6 +563,9 @@ function PayrollPage() {
         <PayrollTable
           employees={filteredEmployees}
           loading={loading}
+          month={month}
+          year={year}
+          onPayrollFinalized={handlePayrollFinalized}
         />
 
         <OvertimeReviewDialog

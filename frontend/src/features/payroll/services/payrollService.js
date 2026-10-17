@@ -1,3 +1,8 @@
+import {
+  getSalaryAdvances,
+  settlePayrollAdvanceDeductions,
+} from "./salaryAdvanceService";
+
 const payrollEmployees = [
   {
     employeeId: "EMP-001",
@@ -145,13 +150,23 @@ const payrollEmployees = [
   },
 ];
 
+// Mock storage for finalized payroll snapshots.
+// Replace with database records when the backend is added.
+const finalizedPayrolls = new Map();
+const finalizingPayrolls = new Set();
+
+function getPayrollKey(employeeId, month, year) {
+  return `${employeeId}:${year}-${String(month).padStart(2, "0")}`;
+}
+
 function delay(data, milliseconds = 100) {
   return new Promise((resolve) => {
     setTimeout(() => resolve(data), milliseconds);
   });
 }
 
-function calculatePayroll(employee) {
+
+function calculatePayroll(employee, advances = [], month, year) {
   let baseEarnings = employee.baseWage;
 
   if (employee.wageModel === "Daily") {
@@ -167,33 +182,151 @@ function calculatePayroll(employee) {
       standardHoursPerDay;
   }
 
-  const grossEarnings =
-    baseEarnings + employee.overtimePay;
+  const grossEarnings = baseEarnings + employee.overtimePay;
 
-  const totalDeductions =
+  const baseDeductions =
     employee.lateDeduction +
     employee.absenceDeduction +
     employee.unpaidLeaveDeduction;
 
-  const netPay =
-    grossEarnings - totalDeductions;
+  const payrollMonth = `${year}-${String(month).padStart(2, "0")}`;
+
+  const employeeAdvances = advances
+    .filter(
+      (advance) =>
+        advance.employeeId === employee.employeeId &&
+        advance.status === "Active" &&
+        advance.startMonth <= payrollMonth,
+    );
+
+  const advanceDeductions = employeeAdvances.reduce(
+    (total, advance) => {
+      const outstandingBalance = Math.max(
+        0,
+        advance.originalAmount -
+        advance.directRepayments -
+        advance.payrollRepayments,
+      );
+
+      return (
+        total +
+        Math.min(advance.monthlyDeduction, outstandingBalance)
+      );
+    },
+    0,
+  );
+
+  const totalDeductions = baseDeductions + advanceDeductions;
+  const netPay = grossEarnings - totalDeductions;
 
   return {
     ...employee,
     baseEarnings,
     grossEarnings,
+    baseDeductions,
+    advanceDeductions,
     totalDeductions,
     netPay,
   };
 }
 
-export async function getPayrollEmployees() {
-  const payroll = payrollEmployees.map(calculatePayroll);
+export async function finalizePayroll(employeeId, month, year) {
+  const today = new Date();
+  const selectedMonth = month ?? today.getMonth() + 1;
+  const selectedYear = year ?? today.getFullYear();
+
+  const payrollMonth =
+    `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
+
+  const key = getPayrollKey(
+    employeeId,
+    selectedMonth,
+    selectedYear,
+  );
+
+  const existing = finalizedPayrolls.get(key);
+
+  if (existing) {
+    return structuredClone(existing);
+  }
+
+  if (finalizingPayrolls.has(key)) {
+    throw new Error("This payroll is already being finalized.");
+  }
+
+  const employee = payrollEmployees.find(
+    (item) => item.employeeId === employeeId,
+  );
+
+  if (!employee) {
+    throw new Error("Employee payroll record not found.");
+  }
+
+  finalizingPayrolls.add(key);
+
+  try {
+    // Calculate and preserve the amounts before settling repayments.
+    const advances = await getSalaryAdvances();
+
+    const payroll = calculatePayroll(
+      employee,
+      advances,
+      selectedMonth,
+      selectedYear,
+    );
+
+    // Record actual advance repayments for this payroll month.
+    await settlePayrollAdvanceDeductions(
+      employeeId,
+      payrollMonth,
+      new Date().toISOString().slice(0, 10),
+    );
+
+    const snapshot = {
+      ...payroll,
+      payrollMonth,
+      payrollStatus: "Finalized",
+      finalizedAt: new Date().toISOString(),
+    };
+
+    finalizedPayrolls.set(key, structuredClone(snapshot));
+
+    return structuredClone(snapshot);
+  } finally {
+    finalizingPayrolls.delete(key);
+  }
+}
+
+export async function getPayrollEmployees(month, year) {
+  const today = new Date();
+  const selectedMonth = month ?? today.getMonth() + 1;
+  const selectedYear = year ?? today.getFullYear();
+
+  const advances = await getSalaryAdvances();
+
+  const payroll = payrollEmployees.map((employee) => {
+    const key = getPayrollKey(
+      employee.employeeId,
+      selectedMonth,
+      selectedYear,
+    );
+
+    const finalized = finalizedPayrolls.get(key);
+
+    return finalized
+      ? structuredClone(finalized)
+      : calculatePayroll(
+        employee,
+        advances,
+        selectedMonth,
+        selectedYear,
+      );
+  });
 
   return delay(payroll);
 }
 
-export async function getEmployeePayroll(employeeId) {
+export async function getEmployeePayroll(employeeId, month, year) {
   const employee = payrollEmployees.find(
     (item) => item.employeeId === employeeId,
   );
@@ -202,11 +335,43 @@ export async function getEmployeePayroll(employeeId) {
     throw new Error("Employee payroll record not found");
   }
 
-  return delay(calculatePayroll(employee));
+  const today = new Date();
+  const selectedMonth = month ?? today.getMonth() + 1;
+  const selectedYear = year ?? today.getFullYear();
+
+  const advances = await getSalaryAdvances();
+
+  const key = getPayrollKey(
+    employeeId,
+    selectedMonth,
+    selectedYear,
+  );
+
+  const finalized = finalizedPayrolls.get(key);
+
+  return delay(
+    finalized
+      ? structuredClone(finalized)
+      : calculatePayroll(
+        employee,
+        advances,
+        selectedMonth,
+        selectedYear,
+      ),
+  );
 }
 
-export async function getPayrollSummary() {
-  const payroll = payrollEmployees.map(calculatePayroll);
+export async function getPayrollSummary(month, year) {
+  const today = new Date();
+  const selectedMonth = month ?? today.getMonth() + 1;
+  const selectedYear = year ?? today.getFullYear();
+
+  const advances = await getSalaryAdvances();
+
+  const payroll = await getPayrollEmployees(
+    selectedMonth,
+    selectedYear,
+  );
 
   const summary = payroll.reduce(
     (result, employee) => ({

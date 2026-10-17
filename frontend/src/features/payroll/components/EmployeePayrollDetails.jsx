@@ -274,6 +274,14 @@ function EmployeePayrollDetails({ employee }) {
               description={`${employee.unpaidLeaveDays} unpaid leave days`}
             />
 
+
+            <DetailRow
+              label="Salary advance deduction"
+              value={`- ${formatCurrency(employee.advanceDeductions ?? 0)}`}
+              description="Monthly repayment of salary advance"
+            />
+
+
             <div className="flex items-center justify-between py-4">
               <p className="font-semibold">
                 Total deductions

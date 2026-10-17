@@ -1,4 +1,5 @@
-import { ArrowUpRight, MoreHorizontal } from "lucide-react";
+import { useState } from "react";
+import { ArrowUpRight, CheckCircle2, LoaderCircle, MoreHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { finalizePayroll } from "../services/payrollService";
+
 function formatCurrency(value) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -17,7 +20,15 @@ function formatCurrency(value) {
   }).format(value);
 }
 
-function getPayrollStatus(employee) {
+function getPayrollStatus(employee, isFinalized = false) {
+  if (isFinalized || employee.payrollStatus === "Finalized") {
+    return {
+      label: "Finalized",
+      className:
+        "bg-blue-500/10 text-blue-700 dark:text-blue-400",
+    };
+  }
+
   if (
     employee.unpaidLeaveDays > 0 ||
     employee.totalDeductions > employee.baseEarnings * 0.1
@@ -36,7 +47,53 @@ function getPayrollStatus(employee) {
   };
 }
 
-function PayrollTable({ employees = [], loading = false }) {
+function PayrollTable({
+  employees = [],
+  loading = false,
+  month,
+  year,
+  onPayrollFinalized,
+}) {
+  const [finalizingEmployees, setFinalizingEmployees] = useState([]);
+  const [finalizedEmployees, setFinalizedEmployees] = useState([]);
+  const [actionError, setActionError] = useState("");
+
+  async function handleFinalize(employeeId) {
+    const isFinalized = finalizedEmployees.includes(employeeId);
+
+    if (isFinalized || finalizingEmployees.includes(employeeId)) {
+      return;
+    }
+
+    setActionError("");
+    setFinalizingEmployees((current) => [...current, employeeId]);
+
+    try {
+      await finalizePayroll(employeeId, month, year);
+
+      setFinalizedEmployees((current) =>
+        current.includes(employeeId)
+          ? current
+          : [...current, employeeId],
+      );
+
+      onPayrollFinalized?.();
+
+      setFinalizedEmployees((current) =>
+        current.includes(employeeId)
+          ? current
+          : [...current, employeeId],
+      );
+    } catch (error) {
+      setActionError(
+        error.message || "Unable to finalize payroll.",
+      );
+    } finally {
+      setFinalizingEmployees((current) =>
+        current.filter((id) => id !== employeeId),
+      );
+    }
+  }
   if (loading) {
     return (
       <section className="overflow-hidden rounded-2xl border bg-background/80 shadow-sm">
@@ -70,6 +127,14 @@ function PayrollTable({ employees = [], loading = false }) {
 
   return (
     <section className="overflow-hidden rounded-2xl border bg-background/80 shadow-sm">
+      {actionError && (
+        <div
+          role="alert"
+          className="border-b border-destructive/20 bg-destructive/5 px-6 py-3 text-sm text-destructive"
+        >
+          {actionError}
+        </div>
+      )}
       <div className="border-b p-6">
         <h2 className="font-semibold">Employee payroll</h2>
 
@@ -121,7 +186,16 @@ function PayrollTable({ employees = [], loading = false }) {
 
           <tbody className="divide-y">
             {employees.map((employee) => {
-              const status = getPayrollStatus(employee);
+              const status = getPayrollStatus(
+                employee,
+                finalizedEmployees.includes(employee.employeeId),
+              );
+
+              const isFinalized =
+                status.label === "Finalized";
+
+              const isFinalizing =
+                finalizingEmployees.includes(employee.employeeId);
 
               return (
                 <tr
@@ -191,15 +265,34 @@ function PayrollTable({ employees = [], loading = false }) {
                     </p>
                   </td>
 
+
                   <td className="px-4 py-4">
                     <p className="font-medium text-destructive">
                       -{formatCurrency(employee.totalDeductions)}
                     </p>
 
-                    <p className="text-xs text-muted-foreground">
-                      Late + leave
-                    </p>
+                    <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                      <p>
+                        Late + leave:{" "}
+                        {formatCurrency(employee.baseDeductions ?? (
+                          employee.lateDeduction +
+                          employee.absenceDeduction +
+                          employee.unpaidLeaveDeduction
+                        ))}
+                      </p>
+
+                      <p>
+                        Salary advance:{" "}
+                        <span className={employee.advanceDeductions > 0
+                          ? "font-medium text-amber-700 dark:text-amber-400"
+                          : ""
+                        }>
+                          {formatCurrency(employee.advanceDeductions ?? 0)}
+                        </span>
+                      </p>
+                    </div>
                   </td>
+
 
                   <td className="px-4 py-4">
                     <p className="font-semibold">
@@ -231,6 +324,22 @@ function PayrollTable({ employees = [], loading = false }) {
                       </DropdownMenuTrigger>
 
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          disabled={isFinalized || isFinalizing}
+                          onClick={() => handleFinalize(employee.employeeId)}
+                        >
+                          {isFinalizing ? (
+                            <LoaderCircle className="size-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="size-4" />
+                          )}
+
+                          {isFinalized
+                            ? "Payroll finalized"
+                            : isFinalizing
+                              ? "Finalizing..."
+                              : "Finalize payroll"}
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           render={
                             <Link

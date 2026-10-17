@@ -7,6 +7,7 @@ import {
     Users,
     WalletCards,
     X,
+    HandCoins,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
@@ -39,6 +40,11 @@ const navigation = [
         label: "Payroll",
         href: "/payroll",
         icon: WalletCards,
+    },
+    {
+        label: "Advances",
+        href: "/salary-advances",
+        icon: HandCoins,
     },
     {
         label: "Settings",
