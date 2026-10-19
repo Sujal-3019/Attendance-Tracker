@@ -28,6 +28,7 @@ import EmployeeLeavesPage from "./features/employee/leaves/pages/EmployeeLeavesP
 import EmployeePayrollPage from "./features/employee/payroll/pages/EmployeePayrollPage";
 import EmployeeProfilePage from "./features/employee/profile/pages/EmployeeProfilePage";
 import SalaryAdvancesPage from "./features/payroll/pages/SalaryAdvancesPage";
+import EmployeeAdvancesPage from "./features/employee/profile/pages/EmployeeAdvancesPage";
 
 function App() {
   return (
@@ -103,6 +104,11 @@ function App() {
             <Route
               path="/employee/profile"
               element={<EmployeeProfilePage />}
+            />
+
+            <Route
+              path="/employee/advances"
+              element={<EmployeeAdvancesPage />}
             />
 
           </Route>

@@ -9,6 +9,7 @@ import {
   UserRound,
   WalletCards,
   X,
+  HandCoins,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,11 @@ const navigation = [
     label: "My Profile",
     href: "/employee/profile",
     icon: UserRound,
+  },
+  {
+    label: "My Advances",
+    href: "/employee/advances",
+    icon: HandCoins,
   },
 ];
 
