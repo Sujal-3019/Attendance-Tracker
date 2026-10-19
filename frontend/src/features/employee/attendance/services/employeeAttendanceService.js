@@ -97,3 +97,46 @@ export async function checkOut() {
 
   return clone(todayRecord);
 }
+
+
+
+export async function resetCheckIn() {
+  if (!todayRecord?.checkIn) {
+    throw new Error("There is no check-in to reset.");
+  }
+
+  if (todayRecord.checkOut) {
+    throw new Error(
+      "Reset check-out first before resetting check-in.",
+    );
+  }
+
+  const recordId = todayRecord.id;
+
+  todayRecord = null;
+  attendanceHistory = attendanceHistory.filter(
+    (record) => record.id !== recordId,
+  );
+
+  return getMyAttendance();
+}
+
+export async function resetCheckOut() {
+  if (!todayRecord?.checkOut) {
+    throw new Error("There is no check-out to reset.");
+  }
+
+  todayRecord = {
+    ...todayRecord,
+    checkOut: null,
+    status: "Present",
+  };
+
+  attendanceHistory = attendanceHistory.map((record) =>
+    record.id === todayRecord.id
+      ? { ...record, checkOut: null, status: "Present" }
+      : record,
+  );
+
+  return getMyAttendance();
+}

@@ -9,6 +9,7 @@ import {
   LogIn,
   LogOut,
   RefreshCw,
+  RotateCcw,
 } from "lucide-react";
 
 import EmployeeAppShell from "@/features/employee/layouts/EmployeeAppShell";
@@ -18,6 +19,8 @@ import {
   checkIn,
   checkOut,
   getMyAttendance,
+  resetCheckIn,
+  resetCheckOut,
 } from "@/features/employee/attendance/services/employeeAttendanceService";
 
 function formatTime(value) {
@@ -153,6 +156,40 @@ function EmployeeAttendancePage() {
     }
   };
 
+  const handleResetAttendance = async (action) => {
+    const isCheckIn = action === "check-in";
+
+    const confirmed = window.confirm(
+      isCheckIn
+        ? "Reset today's check-in? This will remove today's check-in record."
+        : "Reset today's check-out? Your check-in will remain recorded.",
+    );
+
+    if (!confirmed) return;
+
+    setActionLoading(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const result = isCheckIn
+        ? await resetCheckIn()
+        : await resetCheckOut();
+
+      setAttendance(result);
+
+      setNotice(
+        isCheckIn
+          ? "Today's check-in has been reset."
+          : "Today's check-out has been reset. You can check out again later.",
+      );
+    } catch (err) {
+      setError(err.message || "Unable to reset attendance.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const completedDays = attendance.history.filter(
     (record) => record.checkIn && record.checkOut,
   ).length;
@@ -245,9 +282,9 @@ function EmployeeAttendancePage() {
             value={
               hasCheckedIn
                 ? formatDuration(
-                    today.checkIn,
-                    today.checkOut || clock.toISOString(),
-                  )
+                  today.checkIn,
+                  today.checkOut || clock.toISOString(),
+                )
                 : "0h 0m"
             }
             description={
@@ -305,9 +342,7 @@ function EmployeeAttendancePage() {
                 onClick={() => handleAttendanceAction("check-in")}
               >
                 <ArrowDownRight className="mr-2 size-4" />
-                {actionLoading && !hasCheckedIn
-                  ? "Recording..."
-                  : "Check In"}
+                {actionLoading && !hasCheckedIn ? "Recording..." : "Check In"}
               </Button>
 
               <Button
@@ -324,6 +359,30 @@ function EmployeeAttendancePage() {
                 <ArrowUpRight className="mr-2 size-4" />
                 Check Out
               </Button>
+
+              {hasCheckedIn && (
+                <Button
+                  variant="outline"
+                  className="h-10 border-amber-500/30 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+                  disabled={loading || actionLoading || hasCheckedOut}
+                  onClick={() => handleResetAttendance("check-in")}
+                >
+                  <RotateCcw className="mr-2 size-4" />
+                  Reset Check-in
+                </Button>
+              )}
+
+              {hasCheckedOut && (
+                <Button
+                  variant="outline"
+                  className="h-10 border-amber-500/30 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+                  disabled={loading || actionLoading}
+                  onClick={() => handleResetAttendance("check-out")}
+                >
+                  <RotateCcw className="mr-2 size-4" />
+                  Reset Check-out
+                </Button>
+              )}
             </div>
 
             <p className="mt-4 text-xs leading-5 text-muted-foreground">
@@ -376,9 +435,9 @@ function EmployeeAttendancePage() {
                 <span className="text-sm font-medium">
                   {hasCheckedIn
                     ? formatDuration(
-                        today.checkIn,
-                        today.checkOut || clock.toISOString(),
-                      )
+                      today.checkIn,
+                      today.checkOut || clock.toISOString(),
+                    )
                     : "--"}
                 </span>
               </div>
