@@ -3,6 +3,12 @@ const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"
 ).replace(/\/+$/, "");
 
+let accessToken = null;
+
+export function setAccessToken(token) {
+  accessToken = token || null;
+}
+
 export class ApiError extends Error {
   constructor(message, { status = 0, data = null } = {}) {
     super(message);
@@ -19,6 +25,9 @@ export async function apiRequest(path, options = {}) {
 
   const { body, headers: customHeaders, ...fetchOptions } = options;
   const headers = new Headers(customHeaders);
+  if (accessToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
+  }
 
   let requestBody = body;
 
@@ -72,22 +81,27 @@ export async function apiRequest(path, options = {}) {
   const contentType = response.headers.get("content-type") || "";
   let data = null;
 
-  try {
-    if (contentType.includes("application/json")) {
+  if (contentType.includes("application/json")) {
+    try {
       data = await response.json();
-    } else {
-      const text = await response.text();
-      data = text || null;
+    } catch {
+      throw new ApiError("The server returned an invalid JSON response.", {
+        status: response.status,
+      });
     }
-  } catch {
-    data = null;
+  } else {
+    const text = await response.text();
+    data = text || null;
   }
 
   if (!response.ok) {
-    const detail =
+    const rawDetail =
       typeof data === "string"
         ? data
         : data?.detail || data?.message || data?.error;
+    const detail = Array.isArray(rawDetail)
+      ? rawDetail.map((item) => item.msg).filter(Boolean).join(" ")
+      : rawDetail;
 
     const message =
       typeof detail === "string"

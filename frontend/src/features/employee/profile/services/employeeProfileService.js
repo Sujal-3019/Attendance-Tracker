@@ -1,35 +1,9 @@
-const wait = (ms = 200) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+import { apiRequest } from "@/lib/api";
 
-let profile = {
-  employeeId: "EMP-003",
-  fullName: "Rahul Singh",
-  email: "employee@a.com",
-  phone: "",
-  department: "Operations",
-  designation: "Employee",
-  employmentType: "Full-time",
-  joiningDate: "2026-01-15",
-  workMode: "Office",
-  manager: "Demo Admin",
-};
-
-export async function getMyProfile() {
-  await wait();
-  return structuredClone(profile);
+export function getMyProfile() {
+  return apiRequest("/api/v1/me/profile");
 }
 
-export async function updateMyProfile(updates) {
-  await wait();
-
-  const allowedFields = ["phone"];
-  const safeUpdates = Object.fromEntries(
-    Object.entries(updates).filter(([key]) =>
-      allowedFields.includes(key)
-    )
-  );
-
-  profile = { ...profile, ...safeUpdates };
-
-  return structuredClone(profile);
+export function updateMyProfile(updates) {
+  return apiRequest("/api/v1/me/profile", { method: "PATCH", body: updates });
 }

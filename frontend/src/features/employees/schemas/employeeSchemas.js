@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const employeeSchema = z.object({
+const employeeFields = {
   name: z
     .string()
     .trim()
@@ -11,6 +11,11 @@ export const employeeSchema = z.object({
     .string()
     .trim()
     .email("Enter a valid email address"),
+
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .max(128, "Password cannot exceed 128 characters"),
 
   phone: z.string().trim().regex(/^[6-9]\d{4}\s?\d{5}$/, "Enter a valid 10-digit mobile number"),
 
@@ -54,4 +59,11 @@ export const employeeSchema = z.object({
   status: z
     .string()
     .min(1, "Select employee status"),
-});
+};
+
+export const employeeSchema = z.object(employeeFields);
+export const employeeUpdateSchema = z.object(
+  Object.fromEntries(
+    Object.entries(employeeFields).filter(([field]) => field !== "password"),
+  ),
+);

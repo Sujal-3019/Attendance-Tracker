@@ -5,7 +5,8 @@ import DashboardHeader from "../components/DashboardHeader";
 import DashboardStatCard from "../components/DashboardStatCard";
 import { 
     getDashboardStats , 
-    getRecentAttendance 
+    getRecentAttendance,
+    getAttendanceChart,
 } from "../services/dashboardService";
 import AttendanceOverview from "../components/AttendanceOverview";
 import RecentAttendance from "../components/RecentAttendance";
@@ -13,18 +14,28 @@ import RecentAttendance from "../components/RecentAttendance";
 function DashboardPage() {
     const [stats, setStats] = useState(null);
     const [recentAttendance, setRecentAttendance] = useState([]);
+    const [attendanceChart, setAttendanceChart] = useState([]);
+    const [loadError, setLoadError] = useState("");
     useEffect(() => {
         let mounted = true;
 
         async function loadDashboard() {
-            const [dashboardData, attendanceData] = await Promise.all([
-                getDashboardStats(),
-                getRecentAttendance(),
-            ]);
+            try {
+                const [dashboardData, recentData, chartData] = await Promise.all([
+                    getDashboardStats(),
+                    getRecentAttendance(),
+                    getAttendanceChart(),
+                ]);
 
-            if (mounted) {
-                setStats(dashboardData);
-                setRecentAttendance(attendanceData);
+                if (mounted) {
+                    setStats(dashboardData);
+                    setRecentAttendance(recentData);
+                    setAttendanceChart(chartData);
+                }
+            } catch (error) {
+                if (mounted) {
+                    setLoadError(error.message);
+                }
             }
         }
 
@@ -39,6 +50,11 @@ function DashboardPage() {
         <AppShell>
             <div className="space-y-8">
                 <DashboardHeader />
+                {loadError && (
+                    <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+                        {loadError}
+                    </p>
+                )}
 
                 <section
                     aria-label="Attendance statistics"
@@ -48,24 +64,18 @@ function DashboardPage() {
                         label="Total employees"
                         value={stats?.totalEmployees ?? "—"}
                         description="Active employees"
-                        trend={8.2}
-                        trendLabel="vs last month"
                     />
 
                     <DashboardStatCard
                         label="Present today"
                         value={stats?.presentToday ?? "—"}
                         description="Employees checked in"
-                        trend={4.5}
-                        trendLabel="vs yesterday"
                     />
 
                     <DashboardStatCard
                         label="Late today"
                         value={stats?.lateToday ?? "—"}
                         description="After grace period"
-                        trend={-12.4}
-                        trendLabel="vs yesterday"
                     />
 
                     <DashboardStatCard
@@ -74,7 +84,7 @@ function DashboardPage() {
                         description="Approved leave today"
                     />
                 </section>
-                <AttendanceOverview />
+                <AttendanceOverview data={attendanceChart} />
                 <RecentAttendance records={recentAttendance} />
             </div>
         </AppShell>

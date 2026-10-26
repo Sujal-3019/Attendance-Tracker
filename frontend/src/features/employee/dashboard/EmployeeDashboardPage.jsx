@@ -94,6 +94,8 @@ function EmployeeDashboardPage() {
 
     const employeeName =
         user?.name?.trim()?.split(/\s+/)[0] || "there";
+    const salaryProjectionUnavailable =
+        salaryError || !salaryProjection || salaryProjection.available === false;
 
     const today = new Intl.DateTimeFormat("en-IN", {
         weekday: "long",
@@ -154,7 +156,7 @@ function EmployeeDashboardPage() {
 
                             <p className="mt-5 text-sm text-muted-foreground">
                                 Estimated take-home pay
-                                {salaryProjection
+                                {salaryProjection?.period
                                     ? ` · ${salaryProjection.period.month} ${salaryProjection.period.year}`
                                     : ""}
                             </p>
@@ -164,9 +166,10 @@ function EmployeeDashboardPage() {
                                     className="mt-2 h-10 w-48 animate-pulse rounded-lg bg-muted"
                                     aria-label="Loading salary projection"
                                 />
-                            ) : salaryError || !salaryProjection ? (
+                            ) : salaryProjectionUnavailable ? (
                                 <p className="mt-3 text-sm text-muted-foreground">
-                                    Salary projection is temporarily unavailable. Please try again later.
+                                    {salaryProjection?.reason ||
+                                        "Salary projection is temporarily unavailable. Please try again later."}
                                 </p>
                             ) : (
                                 <>
@@ -195,7 +198,7 @@ function EmployeeDashboardPage() {
                                 <p className="text-xs text-muted-foreground">Gross earnings</p>
 
                                 <p className="mt-2 text-lg font-semibold">
-                                    {salaryLoading || salaryError || !salaryProjection
+                                    {salaryLoading || salaryProjectionUnavailable
                                         ? "—"
                                         : formatCurrency(salaryProjection.grossPay)}
                                 </p>
@@ -209,7 +212,7 @@ function EmployeeDashboardPage() {
                                 <p className="text-xs text-muted-foreground">Total deductions</p>
 
                                 <p className="mt-2 text-lg font-semibold">
-                                    {salaryLoading || salaryError || !salaryProjection
+                                    {salaryLoading || salaryProjectionUnavailable
                                         ? "—"
                                         : formatCurrency(salaryProjection.totalDeductions)}
                                 </p>
@@ -219,7 +222,9 @@ function EmployeeDashboardPage() {
                                 </p>
                             </div>
 
-                            {!salaryLoading && !salaryError && salaryProjection && (
+                            {!salaryLoading &&
+                                !salaryProjectionUnavailable &&
+                                salaryProjection && (
                                 <div className="col-span-2 rounded-xl bg-muted/40 px-4 py-3">
                                     <div className="flex items-start gap-2">
                                         <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

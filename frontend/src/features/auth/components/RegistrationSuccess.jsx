@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 
-function RegistrationSuccess({ organizationName }) {
+function RegistrationSuccess({ organizationName, admin = false, enrollmentCode }) {
   return (
     <div className="rounded-3xl border border-border/60 bg-card/60 p-7 text-center shadow-xl shadow-black/5 backdrop-blur-xl sm:p-9">
       <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-emerald-500/10">
@@ -11,23 +11,34 @@ function RegistrationSuccess({ organizationName }) {
       </div>
 
       <h2 className="mt-6 text-2xl font-semibold tracking-tight">
-        Organization created
+        {admin ? "Administrator account created" : "Employee account created"}
       </h2>
 
       <p className="mt-3 text-sm leading-6 text-muted-foreground">
         {organizationName
-          ? `${organizationName} has been created successfully.`
-          : "Your organization has been created successfully."}
+          ? `Your account has been created for ${organizationName}.`
+          : "Your employee account has been created successfully."}
       </p>
 
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        Your administrator account is ready. You can now sign in and
-        configure your workforce.
+        {admin
+          ? "You are signed in and can now manage your organization."
+          : "You can now sign in using your email address and password."}
       </p>
 
-      <Link to="/login" className="mt-7 block">
+      {admin && enrollmentCode && (
+        <div className="mt-5 rounded-xl border border-border bg-background p-4 text-left">
+          <p className="text-xs font-semibold">One-time employee enrollment code</p>
+          <code className="mt-2 block select-all break-all text-sm">{enrollmentCode}</code>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            Save this code now and share it only with verified employees. It will not be shown again.
+          </p>
+        </div>
+      )}
+
+      <Link to={admin ? "/dashboard" : "/login"} className="mt-7 block">
         <Button size="lg" className="w-full rounded-xl">
-          Continue to login
+          {admin ? "Continue to dashboard" : "Continue to login"}
           <ArrowRight className="size-4" />
         </Button>
       </Link>

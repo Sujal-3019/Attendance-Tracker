@@ -1,142 +1,29 @@
+import { apiRequest } from "@/lib/api";
 
-const wait = (ms = 250) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
-function getLocalDateKey(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+export function getMyAttendance() {
+  return apiRequest("/api/v1/me/attendance");
 }
 
-function makePastRecord(daysAgo, checkInTime, checkOutTime) {
-  const date = new Date();
-  date.setDate(date.getDate() - daysAgo);
-
-  const dateKey = getLocalDateKey(date);
-
-  return {
-    id: `mock-attendance-${dateKey}`,
-    date: dateKey,
-    checkIn: `${dateKey}T${checkInTime}:00`,
-    checkOut: `${dateKey}T${checkOutTime}:00`,
-    status: "Present",
-  };
+export function checkIn() {
+  return apiRequest("/api/v1/me/attendance/check-in", { method: "POST" });
 }
 
-let todayRecord = null;
-
-let attendanceHistory = [
-  makePastRecord(1, "09:12", "18:04"),
-  makePastRecord(2, "09:03", "18:11"),
-  makePastRecord(3, "09:24", "18:02"),
-  makePastRecord(4, "08:56", "18:16"),
-  makePastRecord(5, "09:08", "17:58"),
-];
-
-function clone(value) {
-  return structuredClone(value);
+export function checkOut() {
+  return apiRequest("/api/v1/me/attendance/check-out", { method: "POST" });
 }
 
-export async function getMyAttendance() {
-  await wait();
-
-  const today = getLocalDateKey();
-
-  // Do not show a previous day's record as today's attendance.
-  if (todayRecord && todayRecord.date !== today) {
-    todayRecord = null;
-  }
-
-  const history = todayRecord
-    ? [todayRecord, ...attendanceHistory]
-    : attendanceHistory;
-
-  return {
-    today: clone(todayRecord),
-    history: clone(history),
-  };
+async function requestReset(event, reason) {
+  const correction = await apiRequest("/api/v1/me/attendance/corrections", {
+    method: "POST",
+    body: { event, reason },
+  });
+  return { ...(await getMyAttendance()), pendingCorrection: correction };
 }
 
-export async function checkIn() {
-  await wait();
-
-  if (todayRecord?.checkIn) {
-    throw new Error("You have already checked in today.");
-  }
-
-  const now = new Date();
-
-  todayRecord = {
-    id: `mock-attendance-${getLocalDateKey(now)}`,
-    date: getLocalDateKey(now),
-    checkIn: now.toISOString(),
-    checkOut: null,
-    status: "Present",
-  };
-
-  return clone(todayRecord);
+export function resetCheckIn() {
+  return requestReset("check_in", "Employee requested check-in correction.");
 }
 
-export async function checkOut() {
-  await wait();
-
-  if (!todayRecord?.checkIn) {
-    throw new Error("You must check in before checking out.");
-  }
-
-  if (todayRecord.checkOut) {
-    throw new Error("You have already checked out today.");
-  }
-
-  todayRecord = {
-    ...todayRecord,
-    checkOut: new Date().toISOString(),
-  };
-
-  return clone(todayRecord);
-}
-
-
-
-export async function resetCheckIn() {
-  if (!todayRecord?.checkIn) {
-    throw new Error("There is no check-in to reset.");
-  }
-
-  if (todayRecord.checkOut) {
-    throw new Error(
-      "Reset check-out first before resetting check-in.",
-    );
-  }
-
-  const recordId = todayRecord.id;
-
-  todayRecord = null;
-  attendanceHistory = attendanceHistory.filter(
-    (record) => record.id !== recordId,
-  );
-
-  return getMyAttendance();
-}
-
-export async function resetCheckOut() {
-  if (!todayRecord?.checkOut) {
-    throw new Error("There is no check-out to reset.");
-  }
-
-  todayRecord = {
-    ...todayRecord,
-    checkOut: null,
-    status: "Present",
-  };
-
-  attendanceHistory = attendanceHistory.map((record) =>
-    record.id === todayRecord.id
-      ? { ...record, checkOut: null, status: "Present" }
-      : record,
-  );
-
-  return getMyAttendance();
+export function resetCheckOut() {
+  return requestReset("check_out", "Employee requested check-out correction.");
 }

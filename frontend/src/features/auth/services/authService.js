@@ -1,91 +1,30 @@
-export async function registerAdmin(payload) {
-  // Temporary mock implementation.
-  // This function will later call the FastAPI endpoint.
+import { apiRequest, setAccessToken } from "@/lib/api";
 
-  await new Promise((resolve) => {
-    setTimeout(resolve, 800);
-  });
-
-  return {
-    success: true,
-    user: {
-      id: "mock-admin-001",
-      name: payload.fullName,
-      email: payload.email,
-      role: "admin",
-    },
-    organization: {
-      id: "mock-org-001",
-      name: payload.organizationName,
-      type: payload.organizationType,
-    },
-  };
+export function getAdminRegistrationStatus() {
+  return apiRequest("/api/v1/auth/admin-registration/status");
 }
 
+export async function registerAdmin(payload) {
+  const result = await apiRequest("/api/v1/auth/register/admin", {
+    method: "POST",
+    body: payload,
+  });
+  setAccessToken(result.accessToken);
+  return result;
+}
 
 export async function loginUser(payload) {
-  await new Promise((resolve) => setTimeout(resolve, 800));
-
-  const email = payload.email.trim().toLowerCase();
-  const password = payload.password;
-
-  if (password !== "password123") {
-    throw new Error("Invalid email or password.");
-  }
-
-  if (email === "admin@a.com") {
-    return {
-      success: true,
-      user: {
-        id: "mock-admin-001",
-        name: "Demo Admin",
-        email,
-        role: "admin",
-        organizationId: "mock-org-001",
-      },
-    };
-  }
-
-  if (email === "employee@a.com") {
-    return {
-      success: true,
-      user: {
-        id: "EMP-003",
-        name: "Rahul Singh",
-        email,
-        role: "employee",
-        organizationId: "mock-org-001",
-      },
-    };
-  }
-
-  throw new Error("Invalid email or password.");
+  const result = await apiRequest("/api/v1/auth/login", {
+    method: "POST",
+    body: payload,
+  });
+  setAccessToken(result.accessToken);
+  return result;
 }
 
 export async function registerEmployee(payload) {
-  // Temporary mock implementation.
-  // Later this will call the FastAPI employee registration endpoint.
-
-  await new Promise((resolve) => {
-    setTimeout(resolve, 800);
+  return apiRequest("/api/v1/auth/register/employee", {
+    method: "POST",
+    body: payload,
   });
-
-  if (payload.organizationCode.toUpperCase() !== "ATTENDLY01") {
-    throw new Error("Invalid organization code.");
-  }
-
-  return {
-    success: true,
-    user: {
-      id: "mock-employee-001",
-      name: payload.fullName,
-      email: payload.email,
-      role: "employee",
-      organizationId: "mock-org-001",
-    },
-    organization: {
-      id: "mock-org-001",
-      name: "Attendly Demo Organization",
-    },
-  };
 }

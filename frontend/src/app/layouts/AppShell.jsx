@@ -8,12 +8,14 @@ import {
     WalletCards,
     X,
     HandCoins,
+    LogOut,
 } from "lucide-react";
 import { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import NotificationBell from "@/features/notifications/components/NotificationBell";
 import { Button } from "@/components/ui/button";
 import ThemeToggle from "@/components/shared/ThemeToggle";
+import { useAuth } from "@/features/auth/context/AuthContext";
 
 const navigation = [
     {
@@ -55,12 +57,24 @@ const navigation = [
 
 function AppShell({ children }) {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const navigate = useNavigate();
+    const { user, logout } = useAuth();
+
+    function handleLogout() {
+        setMobileMenuOpen(false);
+        logout();
+        navigate("/login", { replace: true });
+    }
 
     return (
         <div className="min-h-screen text-foreground">
             {/* Desktop sidebar */}
             <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-border/60 bg-card/70 backdrop-blur-xl lg:flex lg:flex-col">
-                <SidebarContent onNavigate={() => setMobileMenuOpen(false)} />
+                <SidebarContent
+                    onNavigate={() => setMobileMenuOpen(false)}
+                    user={user}
+                    onLogout={handleLogout}
+                />
             </aside>
 
             {/* Mobile overlay */}
@@ -96,7 +110,7 @@ function AppShell({ children }) {
                     <Navigation onNavigate={() => setMobileMenuOpen(false)} />
                 </div>
 
-                <UserPanel />
+                <UserPanel user={user} onLogout={handleLogout} />
             </aside>
 
             {/* Main area */}
@@ -127,14 +141,27 @@ function AppShell({ children }) {
                         <button
                             type="button"
                             className="ml-1 flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-muted"
+                            onClick={handleLogout}
+                            aria-label="Sign out"
+                            title="Sign out"
                         >
                             <div className="flex size-8 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background">
-                                DA
+                                {(user?.name || "Administrator")
+                                    .trim()
+                                    .split(/\s+/)
+                                    .slice(0, 2)
+                                    .map((part) => part[0])
+                                    .join("")
+                                    .toUpperCase()}
                             </div>
 
                             <div className="hidden leading-tight sm:block">
-                                <p className="text-xs font-semibold">Demo Admin</p>
-                                <p className="text-[10px] text-muted-foreground">Administrator</p>
+                                <p className="text-xs font-semibold">
+                                    {user?.name || "Administrator"}
+                                </p>
+                                <p className="text-[10px] text-muted-foreground">
+                                    Sign out
+                                </p>
                             </div>
                         </button>
                     </div>
@@ -148,7 +175,7 @@ function AppShell({ children }) {
     );
 }
 
-function SidebarContent() {
+function SidebarContent({ onNavigate, user, onLogout }) {
     return (
         <>
             <div className="flex h-16 items-center border-b border-border/60 px-5">
@@ -156,10 +183,10 @@ function SidebarContent() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-3">
-                <Navigation />
+                <Navigation onNavigate={onNavigate} />
             </div>
 
-            <UserPanel />
+            <UserPanel user={user} onLogout={onLogout} />
         </>
     );
 }
@@ -216,21 +243,39 @@ function Navigation({ onNavigate }) {
     );
 }
 
-function UserPanel() {
+function UserPanel({ user, onLogout }) {
+    const displayName = user?.name || "Administrator";
+    const initials = displayName
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map((part) => part[0])
+        .join("")
+        .toUpperCase();
+
     return (
         <div className="border-t border-border/60 p-3">
             <div className="flex items-center gap-3 rounded-xl bg-muted/60 p-3">
                 <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background">
-                    DA
+                    {initials}
                 </div>
 
                 <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs font-semibold">Demo Admin</p>
+                    <p className="truncate text-xs font-semibold">{displayName}</p>
                     <p className="truncate text-[11px] text-muted-foreground">
-                        admin@attendly.demo
+                        {user?.email || "Administrator"}
                     </p>
                 </div>
             </div>
+            <Button
+                type="button"
+                variant="ghost"
+                className="mt-2 w-full justify-start gap-2 rounded-xl text-muted-foreground hover:text-foreground"
+                onClick={onLogout}
+            >
+                <LogOut className="size-4" />
+                Sign out
+            </Button>
         </div>
     );
 }

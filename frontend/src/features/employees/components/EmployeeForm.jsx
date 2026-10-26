@@ -1,12 +1,16 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-import { employeeSchema } from "../schemas/employeeSchemas";
+import {
+  employeeSchema,
+  employeeUpdateSchema,
+} from "../schemas/employeeSchemas";
 import {
   createEmployee,
   updateEmployee,
@@ -40,6 +44,7 @@ const statuses = ["Active", "Inactive"];
 const defaultValues = {
   name: "",
   email: "",
+  password: "",
   phone: "",
   employeeId: "",
   department: "",
@@ -54,15 +59,17 @@ const defaultValues = {
 
 function EmployeeForm({ employee = null }) {
   const navigate = useNavigate();
+  const [submitError, setSubmitError] = useState("");
 
   const isEditing = Boolean(employee);
 
   const form = useForm({
-    resolver: zodResolver(employeeSchema),
+    resolver: zodResolver(isEditing ? employeeUpdateSchema : employeeSchema),
     defaultValues: employee
       ? {
           name: employee.name ?? "",
           email: employee.email ?? "",
+          password: "",
           phone: employee.phone?.replace("+91 ", "") ?? "",
           employeeId: employee.id ?? "",
           department: employee.department ?? "",
@@ -84,17 +91,29 @@ function EmployeeForm({ employee = null }) {
   } = form;
 
   async function onSubmit(values) {
-    if (isEditing) {
-      await updateEmployee(employee.id, values);
-    } else {
-      await createEmployee(values);
+    setSubmitError("");
+    try {
+      if (isEditing) {
+        await updateEmployee(employee.id, values);
+      } else {
+        await createEmployee(values);
+      }
+      navigate("/employees");
+    } catch (error) {
+      setSubmitError(error.message || "Unable to save the employee.");
     }
-
-    navigate("/employees");
   }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      {submitError && (
+        <div
+          role="alert"
+          className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+        >
+          {submitError}
+        </div>
+      )}
       {/* Personal information */}
       <section className="rounded-2xl border border-border/60 bg-card/55 p-5 shadow-sm backdrop-blur-sm sm:p-6">
         <div className="mb-6">
@@ -131,6 +150,26 @@ function EmployeeForm({ employee = null }) {
               className="h-10 rounded-xl"
             />
           </FormField>
+
+          {!isEditing && (
+            <FormField
+              label="Initial account password"
+              required
+              error={errors.password?.message}
+            >
+              <Input
+                {...register("password")}
+                type="password"
+                autoComplete="new-password"
+                placeholder="At least 8 characters"
+                className="h-10 rounded-xl"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Share this password securely with the employee. They can use
+                their email address to sign in.
+              </p>
+            </FormField>
+          )}
 
           <FormField
             label="Phone number"
@@ -336,7 +375,11 @@ function EmployeeForm({ employee = null }) {
           className="rounded-xl"
           disabled={isSubmitting}
         >
-          <Save className="size-4" />
+          {isSubmitting ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Save className="size-4" />
+          )}
 
           {isSubmitting
             ? "Saving..."

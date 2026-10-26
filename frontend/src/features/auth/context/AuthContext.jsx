@@ -7,6 +7,8 @@ import {
   useState,
 } from "react";
 
+import { setAccessToken } from "@/lib/api";
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -17,6 +19,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
+    setAccessToken(null);
     setUser(null);
   }, []);
 

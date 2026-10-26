@@ -26,6 +26,24 @@ const absenceDeductionTypes = [
     "Fixed Amount",
 ];
 
+const defaultValues = {
+    wageModel: "Monthly",
+    defaultWage: 0,
+    lateDeductionEnabled: false,
+    lateDeductionType: "Per Minute",
+    lateDeductionRate: 0,
+    halfDayDeductionEnabled: false,
+    halfDayDeductionType: "Half Day Wage",
+    halfDayDeductionAmount: 0,
+    absenceDeductionAmount: 0,
+    absenceDeductionEnabled: false,
+    absenceDeductionType: "Full Day Wage",
+    overtimeEnabled: false,
+    overtimeMultiplier: 1,
+    paidLeaveDeduction: false,
+    unpaidLeaveDeduction: false,
+};
+
 function PayrollSettingsForm({
     initialValues,
     onSubmit,
@@ -40,11 +58,11 @@ function PayrollSettingsForm({
         formState: { errors },
     } = useForm({
         resolver: zodResolver(payrollSettingsSchema),
-        defaultValues: initialValues,
+        defaultValues: { ...defaultValues, ...initialValues },
     });
 
     useEffect(() => {
-        reset(initialValues);
+        reset({ ...defaultValues, ...initialValues });
     }, [initialValues, reset]);
 
     const wageModel = watch("wageModel");

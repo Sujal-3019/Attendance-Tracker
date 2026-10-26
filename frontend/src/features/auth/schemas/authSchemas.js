@@ -2,6 +2,11 @@ import { z } from "zod";
 
 export const adminRegisterSchema = z
   .object({
+    setupCode: z
+      .string()
+      .min(32, "Setup code must be at least 32 characters.")
+      .max(128, "Setup code cannot exceed 128 characters."),
+
     organizationName: z
       .string()
       .trim()

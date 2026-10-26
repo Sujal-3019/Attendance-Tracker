@@ -1,5 +1,6 @@
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import RegistrationSuccess from "./RegistrationSuccess";
@@ -13,6 +14,7 @@ import {
 import { registerAdmin } from "../services/authService";
 
 function AdminRegisterForm() {
+    const { login } = useAuth();
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [submitError, setSubmitError] = useState("");
@@ -25,6 +27,7 @@ function AdminRegisterForm() {
     } = useForm({
         resolver: zodResolver(adminRegisterSchema),
         defaultValues: {
+            setupCode: "",
             organizationName: "",
             organizationType: "",
             fullName: "",
@@ -35,29 +38,46 @@ function AdminRegisterForm() {
         },
     });
 
-    const onSubmit = async (data) => { 
-        setSubmitError(""); 
-        try { 
-            const result = await registerAdmin(data); 
-            setRegistrationResult(result); 
-        } catch (error) { 
-            console.error("Admin registration failed:", error); 
-            setSubmitError( "We couldn't create your account right now. Please try again.", ); 
-        } 
+    const onSubmit = async (data) => {
+        setSubmitError("");
+        try {
+            const result = await registerAdmin(data);
+            login(result.user);
+            setRegistrationResult(result);
+        } catch (error) {
+            setSubmitError(error.message || "We couldn't create your account.");
+        }
     };
 
-    if (registrationResult?.success) { 
-        return ( 
-        <RegistrationSuccess organizationName={
-            registrationResult.organization.name
-        } 
-        /> 
-    ); 
+    if (registrationResult?.success) {
+        return (
+            <RegistrationSuccess
+                organizationName={registrationResult.organization.name}
+                admin
+                enrollmentCode={registrationResult.employeeEnrollmentCode}
+            />
+        );
     }
 
     return (
-        
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-7">
+            <section className="space-y-2">
+                <label htmlFor="setupCode" className="text-sm font-medium">
+                    One-time administrator setup code
+                </label>
+                <Input
+                    id="setupCode"
+                    type="password"
+                    autoComplete="off"
+                    {...register("setupCode")}
+                />
+                <p className="text-xs leading-5 text-muted-foreground">
+                    Get this private code from the person who configured the backend.
+                </p>
+                {errors.setupCode && (
+                    <p className="text-xs text-destructive">{errors.setupCode.message}</p>
+                )}
+            </section>
             {/* Organization */}
             <section className="space-y-4">
                 <div>
@@ -283,10 +303,10 @@ function AdminRegisterForm() {
                     {isSubmitting ? (
                         <>
                             <Loader2 className="size-4 animate-spin" />
-                            Creating organization...
+                            Creating administrator...
                         </>
                     ) : (
-                        "Create organization"
+                        "Create administrator account"
                     )}
                 </Button>
 

@@ -6,6 +6,23 @@ import { Input } from "@/components/ui/input";
 function LeaveBalanceTable({ balances }) {
     const [search, setSearch] = useState("");
 
+    const leaveTypes = useMemo(() => {
+        const types = new Map();
+
+        balances.forEach((employee) => {
+            employee.balances.forEach((balance) => {
+                if (!types.has(balance.code)) {
+                    types.set(balance.code, {
+                        code: balance.code,
+                        name: balance.type,
+                    });
+                }
+            });
+        });
+
+        return [...types.values()];
+    }, [balances]);
+
     const filteredBalances = useMemo(() => {
         const normalizedSearch = search.trim().toLowerCase();
 
@@ -15,12 +32,8 @@ function LeaveBalanceTable({ balances }) {
 
         return balances.filter(
             (employee) =>
-                employee.employeeName
-                    .toLowerCase()
-                    .includes(normalizedSearch) ||
-                employee.employeeId
-                    .toLowerCase()
-                    .includes(normalizedSearch),
+                employee.employeeName.toLowerCase().includes(normalizedSearch) ||
+                String(employee.employeeId).toLowerCase().includes(normalizedSearch),
         );
     }, [balances, search]);
 
@@ -59,17 +72,11 @@ function LeaveBalanceTable({ balances }) {
                                 Employee
                             </th>
 
-                            <th className="px-4 py-3 font-medium">
-                                Casual leave
-                            </th>
-
-                            <th className="px-4 py-3 font-medium">
-                                Sick leave
-                            </th>
-
-                            <th className="px-4 py-3 font-medium">
-                                Earned leave
-                            </th>
+                            {leaveTypes.map((leaveType) => (
+                                <th key={leaveType.code} className="px-4 py-3 font-medium">
+                                    {leaveType.name}
+                                </th>
+                            ))}
 
                             <th className="px-4 py-3 font-medium">
                                 Total remaining
@@ -79,10 +86,16 @@ function LeaveBalanceTable({ balances }) {
 
                     <tbody>
                         {filteredBalances.map((employee) => {
-                            const totalRemaining =
-                                employee.casual.remaining +
-                                employee.sick.remaining +
-                                employee.earned.remaining;
+                            const employeeBalances = new Map(
+                                employee.balances.map((balance) => [
+                                    balance.code,
+                                    balance,
+                                ]),
+                            );
+                            const totalRemaining = employee.balances.reduce(
+                                (total, balance) => total + balance.remaining,
+                                0,
+                            );
 
                             return (
                                 <tr
@@ -99,23 +112,13 @@ function LeaveBalanceTable({ balances }) {
                                         </p>
                                     </td>
 
-                                    <td className="px-4 py-4">
-                                        <LeaveBalanceCell
-                                            balance={employee.casual}
-                                        />
-                                    </td>
-
-                                    <td className="px-4 py-4">
-                                        <LeaveBalanceCell
-                                            balance={employee.sick}
-                                        />
-                                    </td>
-
-                                    <td className="px-4 py-4">
-                                        <LeaveBalanceCell
-                                            balance={employee.earned}
-                                        />
-                                    </td>
+                                    {leaveTypes.map((leaveType) => (
+                                        <td key={leaveType.code} className="px-4 py-4">
+                                            <LeaveBalanceCell
+                                                balance={employeeBalances.get(leaveType.code)}
+                                            />
+                                        </td>
+                                    ))}
 
                                     <td className="px-4 py-4">
                                         <span className="font-semibold">
@@ -145,6 +148,10 @@ function LeaveBalanceTable({ balances }) {
 }
 
 function LeaveBalanceCell({ balance }) {
+    if (!balance) {
+        return <span className="text-sm text-muted-foreground">—</span>;
+    }
+
     const usagePercentage =
         balance.allocated > 0
             ? Math.min(

@@ -8,16 +8,6 @@ import {
   YAxis,
 } from "recharts";
 
-const attendanceData = [
-  { day: "Mon", present: 24, late: 3, leave: 2, absent: 3 },
-  { day: "Tue", present: 26, late: 2, leave: 1, absent: 3 },
-  { day: "Wed", present: 25, late: 4, leave: 2, absent: 1 },
-  { day: "Thu", present: 27, late: 2, leave: 1, absent: 2 },
-  { day: "Fri", present: 23, late: 5, leave: 2, absent: 2 },
-  { day: "Sat", present: 18, late: 2, leave: 4, absent: 8 },
-  { day: "Sun", present: 0, late: 0, leave: 0, absent: 32 },
-];
-
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) {
     return null;
@@ -42,7 +32,7 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-function AttendanceOverview() {
+function AttendanceOverview({ data = [] }) {
   return (
     <section className="rounded-2xl border border-border/60 bg-card/70 p-4 shadow-sm backdrop-blur-xl sm:p-5 lg:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -64,18 +54,23 @@ function AttendanceOverview() {
         </div>
       </div>
 
-      <div className="mt-6 h-70 w-full sm:h-80">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={attendanceData}
-            margin={{
-              top: 8,
-              right: 4,
-              left: -20,
-              bottom: 0,
-            }}
-            barGap={4}
-          >
+      {data.length === 0 ? (
+        <p className="mt-6 rounded-xl bg-muted/40 px-4 py-8 text-center text-sm text-muted-foreground">
+          No attendance data is available for this week.
+        </p>
+      ) : (
+        <div className="mt-6 h-70 w-full sm:h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={data}
+              margin={{
+                top: 8,
+                right: 4,
+                left: -20,
+                bottom: 0,
+              }}
+              barGap={4}
+            >
             <CartesianGrid
               vertical={false}
               stroke="currentColor"
@@ -131,16 +126,17 @@ function AttendanceOverview() {
               fill="var(--chart-3)"
             />
 
-            <Bar
-              dataKey="absent"
-              name="Absent"
-              stackId="attendance"
-              fill="var(--chart-5)"
-              radius={[5, 5, 0, 0]}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+              <Bar
+                dataKey="absent"
+                name="Absent"
+                stackId="attendance"
+                fill="var(--chart-5)"
+                radius={[5, 5, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </section>
   );
 }

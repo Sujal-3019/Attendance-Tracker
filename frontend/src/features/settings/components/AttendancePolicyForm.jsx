@@ -18,6 +18,19 @@ const DAYS = [
   "Sunday",
 ];
 
+const DEFAULT_POLICY = {
+  workStartTime: "09:00",
+  workEndTime: "17:00",
+  gracePeriodMinutes: 5,
+  lateThresholdMinutes: 15,
+  minimumWorkingHours: 8,
+  halfDayHours: 4,
+  earlyCheckoutAllowed: false,
+  overtimeEnabled: false,
+  overtimeAfterMinutes: 0,
+  workingDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+};
+
 function AttendancePolicyForm({
   policy,
   onSubmit,
@@ -31,12 +44,12 @@ function AttendancePolicyForm({
     formState: { errors },
   } = useForm({
     resolver: zodResolver(attendancePolicySchema),
-    defaultValues: policy,
+    defaultValues: { ...DEFAULT_POLICY, ...policy },
   });
 
   useEffect(() => {
     if (policy) {
-      reset(policy);
+      reset({ ...DEFAULT_POLICY, ...policy });
     }
   }, [policy, reset]);
 
@@ -60,6 +73,8 @@ function AttendancePolicyForm({
 
           <p className="mt-1 text-xs text-muted-foreground">
             Define the standard working schedule for employees.
+            Changes take effect after saving. A weekday schedule is
+            prefilled when no policy has been saved yet.
           </p>
         </div>
 
