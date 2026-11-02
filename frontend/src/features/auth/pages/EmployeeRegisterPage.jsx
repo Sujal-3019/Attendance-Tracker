@@ -10,7 +10,7 @@ function EmployeeRegisterPage() {
   return (
     <AuthShell
       title="Join your organization"
-      description="Create your employee account using the organization code provided by your administrator."
+      description="Register with the company code shared by your administrator. They will complete your employment details after you join."
     >
       <div className="mb-6">
         <Link to="/register">

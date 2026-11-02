@@ -36,6 +36,7 @@ function Detail({ label, value, icon: Icon }) {
 
 export default function EmployeeProfilePage() {
   const [profile, setProfile] = useState(null);
+  const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -50,6 +51,7 @@ export default function EmployeeProfilePage() {
       .then((data) => {
         if (!active) return;
         setProfile(data);
+        setFullName(data.fullName);
         setPhone(data.phone);
       })
       .catch(() => {
@@ -81,14 +83,21 @@ export default function EmployeeProfilePage() {
     setSaving(true);
 
     try {
+      const needsLegacyName = profile.fullName === "Pending employee";
       const updated = await updateMyProfile({
         phone: cleanedPhone,
+        ...(needsLegacyName
+          ? { fullName: fullName.trim() }
+          : {}),
       });
 
       setProfile(updated);
+      setFullName(updated.fullName);
       setPhone(updated.phone);
       setEditing(false);
-      setSuccess("Your contact details have been updated.");
+      setSuccess(needsLegacyName
+        ? "Your name and contact details have been updated."
+        : "Your contact details have been updated.");
     } catch {
       setError("Unable to save your changes. Please try again.");
     } finally {
@@ -97,6 +106,7 @@ export default function EmployeeProfilePage() {
   }
 
   function cancelEditing() {
+    setFullName(profile.fullName);
     setPhone(profile.phone);
     setEditing(false);
     setError("");
@@ -197,6 +207,28 @@ export default function EmployeeProfilePage() {
               {editing ? (
                 <form onSubmit={handleSave} className="max-w-xl space-y-4">
                   <div>
+                    {profile.fullName === "Pending employee" && (
+                      <>
+                        <label
+                          htmlFor="profile-name"
+                          className="mb-2 block text-sm font-medium text-slate-700"
+                        >
+                          Your name
+                        </label>
+                        <input
+                          id="profile-name"
+                          type="text"
+                          autoComplete="name"
+                          value={fullName}
+                          onChange={(event) => setFullName(event.target.value)}
+                          placeholder="Enter your full name"
+                          maxLength={100}
+                          minLength={2}
+                          required
+                          className="mb-4 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-cyan-600"
+                        />
+                      </>
+                    )}
                     <label
                       htmlFor="profile-phone"
                       className="mb-2 block text-sm font-medium text-slate-700"

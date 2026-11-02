@@ -12,7 +12,7 @@ from app.models.attendance import AttendanceCorrection, AttendanceRecord
 from app.models.employee import Employee
 from app.models.leave import LeaveRequest
 from app.models.organization import OrganizationSettings
-from app.models.payroll import OvertimeRequest
+from app.models.payroll import Notification, OvertimeRequest
 from app.models.user import User
 from app.schemas.attendance import AttendanceCorrectionCreate
 
@@ -69,9 +69,24 @@ def get_my_attendance(db: Session, user: User, *, page: int = 1, page_size: int 
         .offset((page - 1) * page_size)
     ).all()
     today_record = next((record for record in rows if record.attendance_date == today), None)
+    pending_correction = None
+    if today_record is not None:
+        pending_correction = db.scalar(
+            select(AttendanceCorrection)
+            .where(
+                AttendanceCorrection.attendance_id == today_record.id,
+                AttendanceCorrection.status == "Pending",
+            )
+            .order_by(AttendanceCorrection.created_at.desc())
+        )
     return {
         "today": _record_values(today_record) if today_record else None,
         "history": [_record_values(record) for record in rows],
+        "pendingCorrection": (
+            _correction_values(pending_correction, today_record)
+            if pending_correction and today_record
+            else None
+        ),
     }
 
 
@@ -170,6 +185,17 @@ def request_correction(
     )
     if record is None:
         raise HTTPException(status_code=404, detail="Today's attendance record was not found")
+    pending_correction = db.scalar(
+        select(AttendanceCorrection.id).where(
+            AttendanceCorrection.attendance_id == record.id,
+            AttendanceCorrection.status == "Pending",
+        )
+    )
+    if pending_correction is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="An attendance correction is already awaiting review",
+        )
     if payload.event == "check_in":
         if record.check_in is None or record.check_out is not None:
             raise HTTPException(status_code=409, detail="Check-in cannot be reset in the current state")
@@ -189,6 +215,31 @@ def request_correction(
         reason=payload.reason.strip(),
     )
     db.add(correction)
+    db.flush()
+    employee = db.get(Employee, employee_id)
+    admins = db.scalars(
+        select(User).where(
+            User.organization_id == user.organization_id,
+            User.role == "admin",
+            User.is_active.is_(True),
+        )
+    ).all()
+    event_label = "check-in" if payload.event == "check_in" else "check-out"
+    for admin in admins:
+        db.add(
+            Notification(
+                organization_id=user.organization_id,
+                user_id=admin.id,
+                title="Attendance correction request",
+                message=(
+                    f"{employee.full_name} requested a {event_label} correction "
+                    f"for {record.attendance_date.isoformat()}."
+                ),
+                category="ATTENDANCE_CORRECTION",
+                action_url=f"/attendance?correction={correction.id}",
+                related_employee_id=employee_id,
+            )
+        )
     db.commit()
     db.refresh(correction)
     return _correction_values(correction, record)

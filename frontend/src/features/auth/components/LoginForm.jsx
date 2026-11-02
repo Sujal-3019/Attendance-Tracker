@@ -59,15 +59,15 @@ function LoginForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
       <div className="space-y-2">
-        <label htmlFor="email" className="text-sm font-medium">
-          Email address
+          <label htmlFor="email" className="text-sm font-medium">
+        Email address or phone number
         </label>
 
         <Input
           id="email"
-          type="email"
-          placeholder="you@company.com"
-          autoComplete="email"
+        type="text"
+        placeholder="you@company.com or 9876543210"
+        autoComplete="username"
           {...register("email")}
         />
 

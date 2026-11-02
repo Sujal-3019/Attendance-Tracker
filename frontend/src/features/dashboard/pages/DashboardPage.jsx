@@ -83,6 +83,12 @@ function DashboardPage() {
                         value={stats?.onLeaveToday ?? "—"}
                         description="Approved leave today"
                     />
+
+                    <DashboardStatCard
+                        label="Absent today"
+                        value={stats?.absentToday ?? "—"}
+                        description="After scheduled workday ends"
+                    />
                 </section>
                 <AttendanceOverview data={attendanceChart} />
                 <RecentAttendance records={recentAttendance} />

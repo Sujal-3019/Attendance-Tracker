@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AppShell from "@/app/layouts/AppShell";
 
@@ -9,6 +9,7 @@ import EmployeeTable from "../components/EmployeeTable";
 import {
   getEmployeeStats,
   getEmployees,
+  updateEmployeeStatus,
 } from "../services/employeeService";
 
 function EmployeesPage() {
@@ -19,6 +20,51 @@ function EmployeesPage() {
   const [department, setDepartment] = useState("all");
   const [status, setStatus] = useState("all");
   const [workMode, setWorkMode] = useState("all");
+  const [updatingEmployeeId, setUpdatingEmployeeId] = useState(null);
+  const [statusError, setStatusError] = useState("");
+
+  const handleStatusChange = useCallback(async (employee, nextStatus) => {
+    const action = nextStatus === "Inactive" ? "deactivate" : "activate";
+    if (
+      !window.confirm(
+        `${action[0].toUpperCase()}${action.slice(1)} ${employee.name}?`,
+      )
+    ) {
+      return;
+    }
+
+    setUpdatingEmployeeId(employee.id);
+    setStatusError("");
+    try {
+      const updatedEmployee = await updateEmployeeStatus(
+        employee.id,
+        nextStatus,
+      );
+      setEmployees((current) =>
+        current.map((item) =>
+          item.id === updatedEmployee.id
+            ? { ...item, ...updatedEmployee }
+            : item,
+        ),
+      );
+      setStats((current) => {
+        if (!current || employee.status === nextStatus) {
+          return current;
+        }
+
+        const difference = nextStatus === "Active" ? 1 : -1;
+        return {
+          ...current,
+          active: current.active + difference,
+          inactive: current.inactive - difference,
+        };
+      });
+    } catch (error) {
+      setStatusError(error.message || `Unable to ${action} employee.`);
+    } finally {
+      setUpdatingEmployeeId(null);
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -77,6 +123,14 @@ function EmployeesPage() {
         <EmployeeHeader />
 
         <EmployeeStats stats={stats} />
+        {statusError && (
+          <p
+            role="alert"
+            className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+          >
+            {statusError}
+          </p>
+        )}
 
         <EmployeeFilters
           search={search}
@@ -89,7 +143,11 @@ function EmployeesPage() {
           setWorkMode={setWorkMode}
         />
 
-        <EmployeeTable employees={filteredEmployees} />
+        <EmployeeTable
+          employees={filteredEmployees}
+          onStatusChange={handleStatusChange}
+          updatingEmployeeId={updatingEmployeeId}
+        />
       </div>
     </AppShell>
   );

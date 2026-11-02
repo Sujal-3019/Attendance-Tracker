@@ -41,13 +41,14 @@ export function createEmployee(employeeData) {
 export function updateEmployee(employeeId, employeeData) {
   const {
     id: _id,
-    employeeId: _employeeId,
+    name: _name,
+    employeeId: employeeCode,
     attendance: _attendance,
     ...fields
   } = employeeData;
   return apiRequest(`/api/v1/employees/${encodeURIComponent(employeeId)}`, {
     method: "PATCH",
-    body: fields,
+    body: { ...fields, employeeCode },
   });
 }
 

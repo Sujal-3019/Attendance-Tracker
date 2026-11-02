@@ -18,6 +18,7 @@ function getNotificationIcon(type) {
     ATTENDANCE_ANOMALY: AlertTriangle,
     OVERTIME_REVIEW: Clock3,
     EMPLOYEE_ADDED: Users,
+    EMPLOYEE_ONBOARDING: Users,
   };
 
   return icons[type] || Bell;
@@ -39,6 +40,8 @@ function getNotificationIconStyle(type) {
       "bg-orange-500/10 text-orange-700 dark:text-orange-400",
     EMPLOYEE_ADDED:
       "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    EMPLOYEE_ONBOARDING:
+      "bg-amber-500/10 text-amber-700 dark:text-amber-400",
   };
 
   return styles[type] || "bg-muted text-muted-foreground";
@@ -66,6 +69,11 @@ function NotificationList({
   function handleReview(notification) {
     if (notification.status === "Unread") {
       onMarkAsRead?.(notification);
+    }
+
+    if (notification.actionUrl) {
+      navigate(notification.actionUrl);
+      return;
     }
 
     if (

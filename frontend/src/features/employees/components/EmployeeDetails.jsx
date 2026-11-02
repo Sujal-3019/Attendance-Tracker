@@ -58,7 +58,12 @@ function InfoItem({ icon: Icon, label, value }) {
     );
 }
 
-function EmployeeDetails({ employee }) {
+function EmployeeDetails({
+    employee,
+    onStatusChange,
+    statusUpdating = false,
+    statusError = "",
+}) {
     return (
         <div className="space-y-6">
             {/* Back */}
@@ -113,13 +118,27 @@ function EmployeeDetails({ employee }) {
 
                         <button
                             type="button"
+                            disabled={statusUpdating}
+                            onClick={() =>
+                                onStatusChange?.(
+                                    employee,
+                                    employee.status === "Active" ? "Inactive" : "Active",
+                                )
+                            }
                             className="rounded-xl bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
                         >
-                            {employee.status === "Active"
-                                ? "Deactivate"
-                                : "Activate"}
+                            {statusUpdating
+                                ? "Updating..."
+                                : employee.status === "Active"
+                                  ? "Deactivate"
+                                  : "Activate"}
                         </button>
                     </div>
+                    {statusError && (
+                        <p role="alert" className="mt-4 text-sm text-destructive">
+                            {statusError}
+                        </p>
+                    )}
                 </div>
             </section>
 
@@ -285,22 +304,27 @@ function EmployeeDetails({ employee }) {
                     </p>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-3">
-                    <LeaveCard
-                        title="Casual leave"
-                        data={employee.leaveSummary.casual}
-                    />
-
-                    <LeaveCard
-                        title="Sick leave"
-                        data={employee.leaveSummary.sick}
-                    />
-
-                    <LeaveCard
-                        title="Earned leave"
-                        data={employee.leaveSummary.earned}
-                    />
-                </div>
+                {employee.leaveAllocations?.length ? (
+                    <div className="grid gap-4 md:grid-cols-3">
+                        {employee.leaveAllocations.map((allocation) => (
+                            <LeaveCard
+                                key={allocation.leaveTypeId}
+                                title={allocation.name}
+                                data={{
+                                    allocated: allocation.allocatedDays,
+                                    used: allocation.usedDays,
+                                    remaining:
+                                        allocation.allocatedDays -
+                                        allocation.usedDays,
+                                }}
+                            />
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-sm text-muted-foreground">
+                        No leave types have been configured.
+                    </p>
+                )}
             </section>
         </div>
     );

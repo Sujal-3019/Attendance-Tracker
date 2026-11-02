@@ -9,6 +9,7 @@ import {
     X,
     HandCoins,
     LogOut,
+    KeyRound,
 } from "lucide-react";
 import { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
@@ -32,6 +33,11 @@ const navigation = [
         label: "Employees",
         href: "/employees",
         icon: Users,
+    },
+    {
+        label: "Company Code",
+        href: "/company-code",
+        icon: KeyRound,
     },
     {
         label: "Leaves",

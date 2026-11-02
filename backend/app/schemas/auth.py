@@ -2,22 +2,38 @@ from uuid import UUID
 
 from typing import Literal
 
-from pydantic import EmailStr, Field
+from pydantic import EmailStr, Field, field_validator
 
 from app.schemas.common import ApiSchema
 
 
 class LoginRequest(ApiSchema):
-    email: EmailStr
+    email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def validate_login_identifier(cls, value: str) -> str:
+        value = value.strip()
+        if "@" not in value and not value.replace("+", "").replace(" ", "").isdigit():
+            raise ValueError("Enter a valid email address or phone number")
+        return value
 
 
 class EmployeeRegistrationRequest(ApiSchema):
     organization_code: str = Field(min_length=4, max_length=100)
     full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr
-    phone: str = Field(min_length=10, max_length=20)
+    phone: str = Field(pattern="^[6-9]\\d{9}$")
     password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("full_name")
+    @classmethod
+    def normalize_full_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Full name must be at least 2 characters")
+        return normalized
 
 
 class AdminRegistrationRequest(ApiSchema):
@@ -37,6 +53,7 @@ class UserPublic(ApiSchema):
     role: str
     organization_id: UUID
     employee_id: UUID | None
+    profile_complete: bool = True
 
 
 class AuthResponse(ApiSchema):

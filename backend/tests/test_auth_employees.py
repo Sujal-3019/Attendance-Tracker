@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from types import SimpleNamespace
 
 from pydantic import SecretStr
@@ -146,6 +147,146 @@ def test_admin_employee_creation_provisions_login_credentials(client):
         json={"email": changed_email, "password": employee_payload["password"]},
     )
     assert inactive_login.status_code == 401
+
+    activated = test_client.patch(
+        f"/api/v1/employees/{employee['id']}/status",
+        headers=admin_headers,
+        json={"status": "Active"},
+    )
+    assert activated.status_code == 200
+    assert activated.json()["status"] == "Active"
+    activated_login = test_client.post(
+        "/api/v1/auth/login",
+        json={"email": changed_email, "password": employee_payload["password"]},
+    )
+    assert activated_login.status_code == 200
+
+
+def test_employee_self_registration_requires_company_code_and_notifies_admin(client):
+    test_client, data = client
+    admin_headers = {
+        "Authorization": f"Bearer {_token(test_client, data['admin_email'], data['password'])}"
+    }
+
+    generated = test_client.post(
+        "/api/v1/settings/company-code",
+        headers=admin_headers,
+    )
+    assert generated.status_code == 200
+    company_code = generated.json()["companyCode"]
+    assert len(company_code) >= 12
+
+    old_code_registration = test_client.post(
+        "/api/v1/auth/register/employee",
+        json={
+            "organizationCode": "test-enrollment-code",
+            "fullName": "Self Registered Employee",
+            "email": "self.registered@example.com",
+            "phone": "9876543213",
+            "password": "employee-login-password",
+        },
+    )
+    assert old_code_registration.status_code == 400
+
+    registered = test_client.post(
+        "/api/v1/auth/register/employee",
+        json={
+            "organizationCode": company_code,
+            "fullName": "Self Registered Employee",
+            "email": "self.registered@example.com",
+            "phone": "9876543213",
+            "password": "employee-login-password",
+        },
+    )
+    assert registered.status_code == 201
+    assert registered.json()["user"]["profileComplete"] is False
+    assert registered.json()["user"]["name"] == "Self Registered Employee"
+    employee_id = registered.json()["user"]["employeeId"]
+
+    phone_login = test_client.post(
+        "/api/v1/auth/login",
+        json={"email": "9876543213", "password": "employee-login-password"},
+    )
+    assert phone_login.status_code == 200
+    assert phone_login.json()["user"]["employeeId"] == employee_id
+    self_name_change = test_client.patch(
+        "/api/v1/me/profile",
+        headers={"Authorization": f"Bearer {phone_login.json()['accessToken']}"},
+        json={"fullName": "Changed Name"},
+    )
+    assert self_name_change.status_code == 403
+    email_login = test_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "self.registered@example.com",
+            "password": "employee-login-password",
+        },
+    )
+    assert email_login.status_code == 200
+    assert email_login.json()["user"]["employeeId"] == employee_id
+    own_leave_balances = test_client.get(
+        "/api/v1/me/leaves",
+        headers={"Authorization": f"Bearer {phone_login.json()['accessToken']}"},
+    )
+    assert own_leave_balances.status_code == 200
+    assert Decimal(own_leave_balances.json()["balances"][0]["allowance"]) == 0
+
+    notifications = test_client.get(
+        "/api/v1/notifications",
+        headers=admin_headers,
+    )
+    onboarding = next(
+        item
+        for item in notifications.json()["items"]
+        if item["type"] == "EMPLOYEE_ONBOARDING"
+    )
+    assert onboarding["actionRequired"] is True
+    assert onboarding["actionUrl"] == f"/employees/{employee_id}/edit"
+
+    name_change = test_client.patch(
+        f"/api/v1/employees/{employee_id}",
+        headers=admin_headers,
+        json={"name": "Name Changed By Admin"},
+    )
+    assert name_change.status_code == 422
+
+    leave_type = test_client.get("/api/v1/leave-types", headers=admin_headers).json()[0]
+    completed = test_client.patch(
+        f"/api/v1/employees/{employee_id}",
+        headers=admin_headers,
+        json={
+            "employeeCode": "EMP-SELF-1",
+            "department": "Engineering",
+            "designation": "Developer",
+            "manager": "Test Admin",
+            "employmentType": "Full-time",
+            "workMode": "Office",
+            "location": "Main Office",
+            "joiningDate": date.today().isoformat(),
+            "wageModel": "Monthly",
+            "baseWage": 50000,
+            "leaveAllocations": [
+                {
+                    "leaveTypeId": leave_type["id"],
+                    "allocatedDays": leave_type["annualAllocation"],
+                }
+            ],
+        },
+    )
+    assert completed.status_code == 200
+    assert completed.json()["profileComplete"] is True
+
+    refreshed_notifications = test_client.get(
+        "/api/v1/notifications",
+        headers=admin_headers,
+    )
+    updated_onboarding = next(
+        item
+        for item in refreshed_notifications.json()["items"]
+        if item["type"] == "EMPLOYEE_ONBOARDING"
+    )
+    assert updated_onboarding["actionRequired"] is False
+    assert updated_onboarding["actionUrl"] is None
 
 
 def test_first_admin_can_register_once_with_server_setup_code(empty_client, monkeypatch):

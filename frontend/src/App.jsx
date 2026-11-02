@@ -18,6 +18,7 @@ import AddEmployeePage from "@/features/employees/pages/AddEmployeePage";
 import EditEmployeePage from "@/features/employees/pages/EditEmployeePage";
 import LeavesPage from "@/features/leaves/pages/LeavesPage";
 import SettingsPage from "@/features/settings/pages/SettingsPage";
+import CompanyCodePage from "@/features/settings/pages/CompanyCodePage";
 import PayrollPage from "@/features/payroll/pages/PayrollPage";
 import EmployeePayrollDetailsPage from "@/features/payroll/components/EmployeePayrollDetailsPage";
 import NotificationsPage from "@/features/notifications/pages/NotificationsPage";
@@ -64,6 +65,7 @@ function App() {
             />
             <Route path="/leaves" element={<LeavesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/company-code" element={<CompanyCodePage />} />
             <Route path="/payroll" element={<PayrollPage />} />
             <Route
               path="/payroll/:employeeId"

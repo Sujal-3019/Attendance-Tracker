@@ -25,6 +25,10 @@ class OrganizationProfile(ApiSchema):
         return self
 
 
+class CompanyCodePublic(ApiSchema):
+    company_code: str
+
+
 class AttendancePolicy(ApiSchema):
     work_start_time: str = Field(pattern="^([01]\\d|2[0-3]):([0-5]\\d)$")
     work_end_time: str = Field(pattern="^([01]\\d|2[0-3]):([0-5]\\d)$")

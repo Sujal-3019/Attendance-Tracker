@@ -1,6 +1,6 @@
 
 import { Bell, CheckCheck } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,7 @@ import {
 } from "../hooks/useNotifications";
 
 function NotificationBell() {
+  const navigate = useNavigate();
   const {
     data: notifications = [],
     isPending,
@@ -34,13 +35,15 @@ function NotificationBell() {
 
   function handleNotificationClick(notification) {
     if (
-      notification.status !== "Unread" ||
-      markOneMutation.isPending
+      notification.status === "Unread" &&
+      !markOneMutation.isPending
     ) {
-      return;
+      markOneMutation.mutate(notification.id);
     }
 
-    markOneMutation.mutate(notification.id);
+    if (notification.actionUrl) {
+      navigate(notification.actionUrl);
+    }
   }
 
   function handleMarkAllAsRead() {

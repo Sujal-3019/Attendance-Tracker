@@ -67,4 +67,7 @@ def current_user(user: Annotated[User, Depends(get_current_user)]) -> UserPublic
         role=user.role,
         organization_id=user.organization_id,
         employee_id=user.employee_id,
+        profile_complete=(
+            user.employee.profile_complete if user.employee is not None else True
+        ),
     )

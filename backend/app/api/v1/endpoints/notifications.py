@@ -40,8 +40,14 @@ def list_notifications(
                 "title": item.title,
                 "message": item.message,
                 "category": item.category,
+                "type": item.category,
                 "createdAt": item.created_at,
                 "read": item.read_at is not None,
+                "status": "Read" if item.read_at is not None else "Unread",
+                "actionRequired": item.action_url is not None,
+                "actionUrl": item.action_url,
+                "priority": "High" if item.category == "EMPLOYEE_ONBOARDING" else "Normal",
+                "recipientName": user.full_name,
             }
             for item in rows
         ],
@@ -80,7 +86,7 @@ def mark_read(
         raise HTTPException(status_code=404, detail="Notification not found")
     item.read_at = item.read_at or datetime.now(UTC)
     db.commit()
-    return {"id": item.id, "read": True}
+    return {"id": item.id, "read": True, "status": "Read"}
 
 
 @router.patch("/read-all")

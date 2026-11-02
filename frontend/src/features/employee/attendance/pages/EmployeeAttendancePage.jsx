@@ -89,6 +89,7 @@ function EmployeeAttendancePage() {
   const [attendance, setAttendance] = useState({
     today: null,
     history: [],
+    pendingCorrection: null,
   });
   const [clock, setClock] = useState(() => new Date());
   const [loading, setLoading] = useState(true);
@@ -161,8 +162,8 @@ function EmployeeAttendancePage() {
 
     const confirmed = window.confirm(
       isCheckIn
-        ? "Reset today's check-in? This will remove today's check-in record."
-        : "Reset today's check-out? Your check-in will remain recorded.",
+        ? "Request a reset of today's check-in? An administrator must approve it."
+        : "Request a reset of today's check-out? An administrator must approve it.",
     );
 
     if (!confirmed) return;
@@ -180,8 +181,8 @@ function EmployeeAttendancePage() {
 
       setNotice(
         isCheckIn
-          ? "Today's check-in has been reset."
-          : "Today's check-out has been reset. You can check out again later.",
+          ? "Your check-in reset request was sent for administrator review."
+          : "Your check-out reset request was sent for administrator review.",
       );
     } catch (err) {
       setError(err.message || "Unable to reset attendance.");
@@ -352,7 +353,8 @@ function EmployeeAttendancePage() {
                   loading ||
                   actionLoading ||
                   !hasCheckedIn ||
-                  hasCheckedOut
+                  hasCheckedOut ||
+                  Boolean(attendance.pendingCorrection)
                 }
                 onClick={() => handleAttendanceAction("check-out")}
               >
@@ -364,11 +366,18 @@ function EmployeeAttendancePage() {
                 <Button
                   variant="outline"
                   className="h-10 border-amber-500/30 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
-                  disabled={loading || actionLoading || hasCheckedOut}
+                  disabled={
+                    loading ||
+                    actionLoading ||
+                    hasCheckedOut ||
+                    Boolean(attendance.pendingCorrection)
+                  }
                   onClick={() => handleResetAttendance("check-in")}
                 >
                   <RotateCcw className="mr-2 size-4" />
-                  Reset Check-in
+                  {attendance.pendingCorrection
+                    ? "Reset request pending"
+                    : "Request check-in reset"}
                 </Button>
               )}
 
@@ -376,19 +385,30 @@ function EmployeeAttendancePage() {
                 <Button
                   variant="outline"
                   className="h-10 border-amber-500/30 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
-                  disabled={loading || actionLoading}
+                  disabled={
+                    loading ||
+                    actionLoading ||
+                    Boolean(attendance.pendingCorrection)
+                  }
                   onClick={() => handleResetAttendance("check-out")}
                 >
                   <RotateCcw className="mr-2 size-4" />
-                  Reset Check-out
+                  {attendance.pendingCorrection
+                    ? "Reset request pending"
+                    : "Request check-out reset"}
                 </Button>
               )}
             </div>
 
             <p className="mt-4 text-xs leading-5 text-muted-foreground">
-              Demo mode: these actions use temporary mock data. Official
-              attendance records will be validated and saved by the backend.
+              Reset requests are reviewed by an administrator before attendance
+              records are changed.
             </p>
+            {attendance.pendingCorrection && (
+              <p className="mt-2 text-sm font-medium text-amber-700 dark:text-amber-400">
+                Attendance reset request pending administrator review.
+              </p>
+            )}
           </article>
 
           <article className="rounded-2xl border border-border/60 bg-card/70 p-5 shadow-sm backdrop-blur-xl sm:p-7">

@@ -23,15 +23,15 @@ function RegistrationSuccess({ organizationName, admin = false, enrollmentCode }
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
         {admin
           ? "You are signed in and can now manage your organization."
-          : "You can now sign in using your email address and password."}
+          : "Your administrator has been notified to complete your employee profile. You can sign in using your email address or phone number and password."}
       </p>
 
       {admin && enrollmentCode && (
         <div className="mt-5 rounded-xl border border-border bg-background p-4 text-left">
-          <p className="text-xs font-semibold">One-time employee enrollment code</p>
+          <p className="text-xs font-semibold">Initial company code</p>
           <code className="mt-2 block select-all break-all text-sm">{enrollmentCode}</code>
           <p className="mt-2 text-xs leading-5 text-muted-foreground">
-            Save this code now and share it only with verified employees. It will not be shown again.
+            Save and share this code only with verified employees. You can generate a replacement from the Company Code page.
           </p>
         </div>
       )}

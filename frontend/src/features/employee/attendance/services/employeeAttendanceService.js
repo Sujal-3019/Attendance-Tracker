@@ -13,11 +13,11 @@ export function checkOut() {
 }
 
 async function requestReset(event, reason) {
-  const correction = await apiRequest("/api/v1/me/attendance/corrections", {
+  await apiRequest("/api/v1/me/attendance/corrections", {
     method: "POST",
     body: { event, reason },
   });
-  return { ...(await getMyAttendance()), pendingCorrection: correction };
+  return getMyAttendance();
 }
 
 export function resetCheckIn() {

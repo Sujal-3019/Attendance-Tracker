@@ -1,3 +1,4 @@
+import secrets
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -5,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.security import hash_password
 from app.models.organization import Organization, OrganizationSettings, WorkLocation
 from app.schemas.settings import (
     AttendancePolicy,
@@ -67,6 +69,16 @@ def get_policy(db: Session, organization_id: UUID, policy_name: str) -> dict:
         defaults = PayrollPolicy().model_dump(by_alias=True)
         return {**defaults, **(value or {})}
     return value or {}
+
+
+def generate_company_code(db: Session, organization_id: UUID) -> dict:
+    organization = db.get(Organization, organization_id)
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    company_code = secrets.token_urlsafe(12)
+    organization.enrollment_code_hash = hash_password(company_code)
+    db.commit()
+    return {"companyCode": company_code}
 
 
 def update_attendance_policy(

@@ -7,6 +7,15 @@ let accessToken = null;
 
 export function setAccessToken(token) {
   accessToken = token || null;
+  if (accessToken) {
+    sessionStorage.setItem("attendance_access_token", accessToken);
+  } else {
+    sessionStorage.removeItem("attendance_access_token");
+  }
+}
+
+export function getAccessToken() {
+  return accessToken;
 }
 
 export class ApiError extends Error {

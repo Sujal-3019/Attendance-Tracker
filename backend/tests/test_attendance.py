@@ -34,6 +34,32 @@ def test_attendance_state_transitions_and_audited_reset(client):
     )
     assert request.status_code == 201
     correction_id = request.json()["id"]
+    admin_notifications = test_client.get(
+        "/api/v1/notifications", headers=admin_headers
+    )
+    assert admin_notifications.status_code == 200
+    correction_notification = next(
+        item
+        for item in admin_notifications.json()["items"]
+        if item["category"] == "ATTENDANCE_CORRECTION"
+    )
+    assert correction_notification["title"] == "Attendance correction request"
+    assert correction_notification["actionUrl"] == (
+        f"/attendance?correction={correction_id}"
+    )
+    assert correction_notification["status"] == "Unread"
+    pending = test_client.get(
+        "/api/v1/me/attendance", headers=employee_headers
+    )
+    assert pending.status_code == 200
+    assert pending.json()["pendingCorrection"]["id"] == correction_id
+    assert pending.json()["today"]["checkOut"] is not None
+    duplicate_request = test_client.post(
+        "/api/v1/me/attendance/corrections",
+        headers=employee_headers,
+        json={"event": "check_out", "reason": "Please reset checkout again"},
+    )
+    assert duplicate_request.status_code == 409
     approval = test_client.post(
         f"/api/v1/attendance/corrections/{correction_id}/approve",
         headers=admin_headers,
@@ -43,6 +69,7 @@ def test_attendance_state_transitions_and_audited_reset(client):
     history = test_client.get("/api/v1/me/attendance", headers=employee_headers)
     assert history.status_code == 200
     assert history.json()["today"]["checkOut"] is None
+    assert history.json()["pendingCorrection"] is None
 
 
 def test_employee_attendance_is_scoped_to_authenticated_employee(client):

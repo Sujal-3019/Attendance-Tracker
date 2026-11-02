@@ -44,7 +44,7 @@ function getWorkModeClasses(workMode) {
   return "bg-amber-500/10 text-amber-700 dark:text-amber-400";
 }
 
-function EmployeeTable({ employees }) {
+function EmployeeTable({ employees, onStatusChange, updatingEmployeeId }) {
   if (employees.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 px-6 py-16 text-center">
@@ -153,13 +153,20 @@ function EmployeeTable({ employees }) {
                   </td>
 
                   <td className="px-5 py-4">
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getStatusClasses(
-                        employee.status,
-                      )}`}
-                    >
-                      {employee.status}
-                    </span>
+                    <div className="flex flex-col items-start gap-1.5">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getStatusClasses(
+                          employee.status,
+                        )}`}
+                      >
+                        {employee.status}
+                      </span>
+                      {!employee.profileComplete && (
+                        <span className="inline-flex rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+                          Setup required
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   <td className="px-5 py-4">
@@ -221,15 +228,13 @@ function EmployeeTable({ employees }) {
 
                           <DropdownMenuItem
                             variant={isActive ? "destructive" : "default"}
-                            onClick={() => {
-                              // Status confirmation will be connected
-                              // in the next step.
-                              console.log(
-                                `${isActive ? "Deactivate" : "Activate"} ${
-                                  employee.name
-                                }`,
-                              );
-                            }}
+                            disabled={updatingEmployeeId === employee.id}
+                            onClick={() =>
+                              onStatusChange?.(
+                                employee,
+                                isActive ? "Inactive" : "Active",
+                              )
+                            }
                           >
                             {isActive ? (
                               <UserX className="size-4" />
@@ -237,7 +242,11 @@ function EmployeeTable({ employees }) {
                               <UserCheck className="size-4" />
                             )}
 
-                            {isActive ? "Deactivate" : "Activate"}
+                            {updatingEmployeeId === employee.id
+                              ? "Updating..."
+                              : isActive
+                                ? "Deactivate"
+                                : "Activate"}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

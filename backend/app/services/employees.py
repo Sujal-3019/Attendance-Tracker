@@ -10,8 +10,9 @@ from app.core.security import hash_password
 from app.models.employee import Employee
 from app.models.attendance import AttendanceRecord
 from app.models.leave import LeaveBalance, LeaveRequest, LeaveType
+from app.models.payroll import Notification
 from app.models.user import User
-from app.schemas.employee import EmployeeCreate, EmployeeUpdate
+from app.schemas.employee import EmployeeCreate, EmployeeLeaveAllocation, EmployeeUpdate
 
 
 def _public_values(employee: Employee) -> dict:
@@ -29,9 +30,104 @@ def _public_values(employee: Employee) -> dict:
         "location": employee.work_location,
         "joiningDate": employee.joining_date,
         "status": employee.status,
+        "profileComplete": employee.profile_complete,
         "wageModel": employee.wage_model,
         "baseWage": employee.base_wage,
     }
+
+
+def _apply_leave_allocations(
+    db: Session,
+    organization_id: UUID,
+    employee: Employee,
+    allocations: list[EmployeeLeaveAllocation],
+) -> None:
+    leave_type_ids = [item.leave_type_id for item in allocations]
+    leave_types = (
+        db.scalars(
+            select(LeaveType).where(
+                LeaveType.organization_id == organization_id,
+                LeaveType.id.in_(leave_type_ids),
+            )
+        ).all()
+        if leave_type_ids
+        else []
+    )
+    if len(leave_types) != len(leave_type_ids):
+        raise HTTPException(status_code=422, detail="One or more leave types are invalid")
+
+    year = datetime.now(UTC).year
+    for allocation in allocations:
+        balance = db.scalar(
+            select(LeaveBalance)
+            .where(
+                LeaveBalance.employee_id == employee.id,
+                LeaveBalance.leave_type_id == allocation.leave_type_id,
+                LeaveBalance.balance_year == year,
+            )
+            .with_for_update()
+        )
+        if balance is not None and balance.used_days > allocation.allocated_days:
+            raise HTTPException(
+                status_code=409,
+                detail="Leave allocation cannot be lower than leave already used",
+            )
+        if balance is None:
+            db.add(
+                LeaveBalance(
+                    organization_id=organization_id,
+                    employee_id=employee.id,
+                    leave_type_id=allocation.leave_type_id,
+                    balance_year=year,
+                    allocated_days=allocation.allocated_days,
+                    used_days=0,
+                )
+            )
+        else:
+            balance.allocated_days = allocation.allocated_days
+    db.flush()
+
+
+def _profile_is_complete(db: Session, employee: Employee) -> bool:
+    required_values = (
+        employee.full_name,
+        employee.department,
+        employee.designation,
+        employee.manager,
+        employee.employment_type,
+        employee.work_mode,
+        employee.work_location,
+        employee.employee_code,
+    )
+    if (
+        any(not value or value == "Pending setup" for value in required_values)
+        or employee.employee_code.startswith("PENDING-")
+        or employee.base_wage <= 0
+    ):
+        return False
+
+    active_leave_type_ids = set(
+        db.scalars(
+            select(LeaveType.id).where(
+                LeaveType.organization_id == employee.organization_id,
+                LeaveType.is_active.is_(True),
+            )
+        ).all()
+    )
+    if not active_leave_type_ids:
+        return True
+
+    balance_type_ids = set(
+        db.scalars(
+            select(LeaveBalance.leave_type_id).where(
+                LeaveBalance.organization_id == employee.organization_id,
+                LeaveBalance.employee_id == employee.id,
+                LeaveBalance.balance_year == datetime.now(UTC).year,
+                LeaveBalance.leave_type_id.in_(active_leave_type_ids),
+            )
+        ).all()
+    )
+    return active_leave_type_ids.issubset(balance_type_ids)
 
 
 def list_employees(
@@ -151,6 +247,7 @@ def employee_details(db: Session, organization_id: UUID, employee_id: UUID) -> d
         .where(LeaveType.organization_id == organization_id)
     ).all()
     leave_summary = {}
+    leave_allocations = []
     for leave_type, balance in balance_rows:
         key = leave_type.code.lower()
         allocated = balance.allocated_days if balance else leave_type.annual_allocation
@@ -160,6 +257,15 @@ def employee_details(db: Session, organization_id: UUID, employee_id: UUID) -> d
             "used": used,
             "remaining": allocated - used,
         }
+        leave_allocations.append(
+            {
+                "leaveTypeId": leave_type.id,
+                "code": leave_type.code,
+                "name": leave_type.name,
+                "allocatedDays": allocated,
+                "usedDays": used,
+            }
+        )
     approved_leave_days = db.scalar(
         select(func.coalesce(func.sum(LeaveRequest.requested_days), 0)).where(
             LeaveRequest.organization_id == organization_id,
@@ -177,6 +283,7 @@ def employee_details(db: Session, organization_id: UUID, employee_id: UUID) -> d
         },
         "recentAttendance": recent,
         "leaveSummary": leave_summary,
+        "leaveAllocations": leave_allocations,
         "approvedLeaveDays": approved_leave_days,
     }
 
@@ -196,6 +303,7 @@ def create_employee(db: Session, organization_id: UUID, payload: EmployeeCreate)
         work_location=payload.location,
         joining_date=payload.joining_date,
         status=payload.status,
+        profile_complete=False,
         wage_model=payload.wage_model,
         base_wage=payload.base_wage,
     )
@@ -214,6 +322,10 @@ def create_employee(db: Session, organization_id: UUID, payload: EmployeeCreate)
                 is_active=employee.status == "Active",
             )
         )
+        _apply_leave_allocations(
+            db, organization_id, employee, payload.leave_allocations
+        )
+        employee.profile_complete = _profile_is_complete(db, employee)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -227,24 +339,28 @@ def update_employee(
 ) -> dict:
     employee = get_employee(db, organization_id, employee_id)
     updates = payload.model_dump(exclude_unset=True, by_alias=False)
-    mapping = {
-        "name": "full_name",
-        "location": "work_location",
-        "employee_id": "employee_code",
-    }
+    mapping = {"location": "work_location"}
     for key, value in updates.items():
+        if key == "leave_allocations":
+            continue
         attribute = mapping.get(key, key)
         setattr(employee, attribute, value)
-        if employee.user is not None and attribute in {
-            "full_name",
-            "email",
-            "phone",
-        }:
+        if employee.user is not None and attribute in {"email", "phone"}:
             setattr(employee.user, attribute, value)
     if employee.email:
         employee.email = str(employee.email).lower()
         if employee.user is not None:
             employee.user.email = employee.email
+    if payload.leave_allocations is not None:
+        _apply_leave_allocations(
+            db, organization_id, employee, payload.leave_allocations
+        )
+    employee.profile_complete = _profile_is_complete(db, employee)
+    if employee.profile_complete:
+        db.query(Notification).filter(
+            Notification.organization_id == organization_id,
+            Notification.related_employee_id == employee.id,
+        ).update({Notification.action_url: None}, synchronize_session=False)
     try:
         db.commit()
     except IntegrityError:

@@ -8,13 +8,13 @@ Paginated endpoints return `{ items, total, page, pageSize }`. Validation errors
 
 | Method and endpoint | Access / purpose | Request | Response and frontend mapping |
 |---|---|---|---|
-| `POST /auth/login` | Public login | `{ email, password }` | `{ success, accessToken, tokenType, expiresIn, user, organization }`; `loginUser` |
+| `POST /auth/login` | Public login by email or phone number | `{ email: <email-or-phone>, password }` | `{ success, accessToken, tokenType, expiresIn, user, organization }`; `loginUser` |
 | `GET /auth/admin-registration/status` | Public setup availability; does not reveal setup code | None | `{ available }`, true only when `ADMIN_SETUP_CODE` is configured and no organization exists; `getAdminRegistrationStatus` |
 | `POST /auth/register/admin` | Public first-admin setup, protected by the server-configured one-time setup code; atomically closes when the first organization is created | `{ setupCode, organizationName, organizationType, fullName, email, phone, password }` | Auth response plus one-time `employeeEnrollmentCode`; frontend `registerAdmin` |
-| `POST /auth/register/employee` | Public employee enrollment, but requires a pre-created active employee and matching identity | `{ organizationCode, fullName, email, phone, password }` | Same auth response as login; `registerEmployee` |
-| `GET /auth/me` | Authenticated identity and role | None | `{ id, name, email, role, organizationId, employeeId }`; source of truth for current user |
-| `GET /me/profile` | Employee self only | None | Employee profile: employee code, name, email, phone, department, designation, employment type, joining date, work mode, manager; `getMyProfile` |
-| `PATCH /me/profile` | Employee self only | `{ phone }` | Updated profile; `updateMyProfile` |
+| `POST /auth/register/employee` | Public self-enrollment, requires the current company code | `{ organizationCode, fullName, email, phone, password }` | Auth response with the employee-provided name and `user.profileComplete: false`; creates a pending employment profile and notifies organization admins; `registerEmployee` |
+| `GET /auth/me` | Authenticated identity and role | None | `{ id, name, email, role, organizationId, employeeId, profileComplete }`; source of truth for current user |
+| `GET /me/profile` | Employee self only | None | Employee profile: employee code, employee-provided name, email, phone, department, designation, employment type, joining date, work mode, manager, profileComplete; `getMyProfile` |
+| `PATCH /me/profile` | Employee self only | `{ phone? }`; name can only be set by the employee for legacy incomplete accounts whose name is still the migration-era placeholder | Updated profile; employee names from registration cannot be changed after account setup; `updateMyProfile` |
 
 Admin registration is not generally open: the server operator must configure the private `ADMIN_SETUP_CODE`, and only one successful organization registration is allowed. PostgreSQL advisory locking serializes simultaneous attempts. The setup code is never returned by the availability endpoint or logged. Existing installations with an organization must continue using an existing admin account; this route cannot add or promote administrators.
 
@@ -24,12 +24,12 @@ Admin registration is not generally open: the server operator must configure the
 |---|---|---|---|
 | `GET /employees?page=&page_size=&search=&department=&status=` | Admin list, max page size 100 | Optional query filters | `{ items: [{ ..., attendance: { present, late } }], total, page, pageSize }`; attendance counts cover the current month and are aggregated in one grouped query; `getEmployees` |
 | `GET /employees/summary` | Admin employee count/status summary | None | Count object; `getEmployeeStats` |
-| `POST /employees` | Admin create employee and linked login account atomically | `employeeCode, name, email, password, phone, department, designation, manager, employmentType, workMode, location, joiningDate, status?, wageModel?, baseWage?`; password is 8-128 characters | Employee profile only; password/hash are never returned. The employee signs in with the supplied email/password; `createEmployee` |
-| `GET /employees/{employeeId}` | Admin details, same organization only | UUID path | Employee detail including permitted attendance/payroll information; `getEmployeeById`, `getEmployeeDetails` |
-| `PATCH /employees/{employeeId}` | Admin update, same organization only | Partial editable employee profile; never role/password | Updated employee; `updateEmployee` |
+| `POST /employees` | Admin create employee and linked login account atomically | `employeeCode, name, email, password, phone, department, designation, manager, employmentType, workMode, location, joiningDate, wageModel?, baseWage?, leaveAllocations?`; password is 8-128 characters | Employee profile with `profileComplete`; password/hash are never returned; `createEmployee` |
+| `GET /employees/{employeeId}` | Admin details, same organization only | UUID path | Employee details and `leaveAllocations` by configured leave type; `getEmployeeById`, `getEmployeeDetails` |
+| `PATCH /employees/{employeeId}` | Admin update, same organization only | Partial employment profile, including `{ employeeCode, department, designation, manager, employmentType, workMode, location, wageModel, baseWage, leaveAllocations: [{ leaveTypeId, allocatedDays }] }`; employee name is rejected and cannot be changed by admins | Updated employee with computed `profileComplete`; profile completion resolves its onboarding notification; `updateEmployee` |
 | `PATCH /employees/{employeeId}/status` | Admin activate/deactivate | `{ status: "Active" \| "Inactive" }` | Updated employee; `updateEmployeeStatus` |
 
-Employee salaries are decimal values. Creating an employee creates an `employee`-role login account in the same transaction. If either record fails, neither is saved. Inactive employees receive inactive accounts and cannot sign in until activated. Editing an employee's email, name, phone, or status synchronizes the linked login identity/status; editing never changes the password.
+Employee salaries are decimal values. Creating an employee creates an `employee`-role login account in the same transaction. If either record fails, neither is saved. Inactive employees receive inactive accounts and cannot sign in until activated. Editing an employee's email, phone, or status synchronizes the linked login identity/status; editing never changes the password or name. Employees provide their name during self-registration; admins cannot change it. Self-registered employees sign in immediately, but have `profileComplete: false` until an admin records their employee code, department, designation, manager, employment type, work mode/location, positive base salary, and allocations for all active leave types.
 
 ## Attendance and corrections
 
@@ -38,7 +38,7 @@ Employee salaries are decimal values. Creating an employee creates an `employee`
 | `GET /me/attendance?page=&page_size=` | Employee self history | Pagination | `{ today, history }`; `getMyAttendance` |
 | `POST /me/attendance/check-in` | Employee self check-in; server timestamp and organization-local date | Empty JSON | Current record `{ id, date, checkIn, checkOut, status, workedHours }`; `checkIn` |
 | `POST /me/attendance/check-out` | Employee self check-out after check-in | Empty JSON | Updated attendance record; `checkOut` |
-| `POST /me/attendance/corrections` | Employee requests auditable check-in/out correction | `{ event: "check_in" \| "check_out", reason }` | Correction with original/requested values and pending status; `resetCheckIn`, `resetCheckOut` |
+| `POST /me/attendance/corrections` | Employee requests auditable check-in/out correction | `{ event: "check_in" \| "check_out", reason }` | Correction with original/requested values and pending status; creates an unread `ATTENDANCE_CORRECTION` notification for each active organization admin linking to `/attendance?correction={id}`; `resetCheckIn`, `resetCheckOut` |
 | `GET /attendance?date=&search=&status=&page=&page_size=` | Admin organization attendance list | Optional filters, pagination max 100 | `{ items, total, page, pageSize }`; `getAttendanceRecords` |
 | `GET /attendance/summary?date=` | Admin daily totals; omitted date means organization-local today | Optional ISO date | `{ date, present, late, absent, onLeave, unmarked, total, totalEmployees }`; `getAttendanceSummary` |
 | `GET /attendance/corrections?status=` | Admin review queue | Optional status | Correction list; `getCorrectionRequests` |
@@ -104,15 +104,16 @@ Historical payroll calculation is not finalized or silently recomputed. The `set
 | `GET /dashboard/recent-attendance` | Admin dashboard recent activity | None | Up to 10 recent attendance rows; `getRecentAttendance` |
 | `GET /dashboard/attendance-chart` | Admin current-week chart | None; Monday-Sunday in organization timezone | `{ weekStart, weekEnd, items: [{ date, day, present, late, leave, absent }] }`; absent is `null` on nonworking/incomplete days and derives from missing active-employee records only after a configured workday is complete; `getAttendanceChart` / `AttendanceOverview` |
 | `GET /settings/organization` / `PATCH /settings/organization` | Admin organization profile | Full profile on patch: name, email, phone, address, IANA timezone, currency, date format | Saved profile; `getOrganizationSettings`, `updateOrganizationSettings` |
+| `POST /settings/company-code` | Admin generates/rotates company enrollment code | None | `{ companyCode }`; plaintext is returned once and the previous code is invalidated; `generateCompanyCode` |
 | `GET /settings/attendance-policy` / `PUT /settings/attendance-policy` | Admin attendance policy | Work start/end, grace/late thresholds, working hours/days, early checkout and overtime switches | Saved policy; `getAttendancePolicy`, `updateAttendancePolicy` |
 | `GET /settings/payroll-policy` / `PUT /settings/payroll-policy` | Admin policy only; values are not used to finalize payroll until confirmed | Wage model and policy fields defined by `PayrollPolicy` schema | Saved policy; `getPayrollSettings`, `updatePayrollSettings` |
 | `GET /settings/work-locations` | Admin locations | None | Location list; `getWorkLocations` |
 | `POST /settings/work-locations` | Admin create location | `{ name, address, latitude, longitude, radiusMeters, primary }` | Created location; `createWorkLocation` |
 | `PATCH /settings/work-locations/{locationId}` | Admin edit location | Partial location fields | Updated location; `updateWorkLocation` |
 | `PATCH /settings/work-locations/{locationId}/status` | Admin activate/deactivate | `{ status: "Active" \| "Inactive" }` | Updated location; `updateWorkLocationStatus` |
-| `GET /notifications?page=&page_size=` | Authenticated user; own notifications only | Pagination | `{ items, total, page, pageSize }`; `getNotifications` |
+| `GET /notifications?page=&page_size=` | Authenticated user; own notifications only | Pagination | `{ items, total, page, pageSize }`, including `status`, `actionRequired`, and optional `actionUrl`; employee onboarding notifications link to admin employee completion and correction notifications link to the admin attendance review; `getNotifications` |
 | `GET /notifications/unread-count` | Authenticated user | None | `{ count }`; `getUnreadNotificationCount` |
-| `PATCH /notifications/{notificationId}/read` | Authenticated user, own notification | None | `{ id, read: true }`; `markNotificationAsRead` |
+| `PATCH /notifications/{notificationId}/read` | Authenticated user, own notification | None | `{ id, read: true, status: "Read" }`; `markNotificationAsRead` |
 | `PATCH /notifications/read-all` | Authenticated user | None | `{ updated }`; `markAllNotificationsAsRead` |
 | `GET /health` and `GET /api/v1/health` | Public liveness | None | `{ status: "ok" }` |
 | `GET /health/db` and `GET /api/v1/health/db` | Public readiness | None | `{ status: "ok", database: "available" }` or safe `503`; frontend health helper |

@@ -105,7 +105,7 @@ Generate a value locally, for example:
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Enter the same code in the Administrator registration form. The backend compares it without logging or returning it. The form becomes unavailable after the first organization is created; concurrent registration attempts are serialized by a PostgreSQL advisory lock. The successful response displays a generated employee enrollment code once—save it and share only with verified employees. Remove `ADMIN_SETUP_CODE` from `.env` and restart the API after the first successful setup. This route cannot register additional organizations or promote users afterward.
+Enter the same code in the Administrator registration form. The backend compares it without logging or returning it. The form becomes unavailable after the first organization is created; concurrent registration attempts are serialized by a PostgreSQL advisory lock. The successful response displays an initial company enrollment code—save it and share only with verified employees. Admins can generate a replacement at **Company Code** in the portal; generating a replacement immediately invalidates the previous code. Remove `ADMIN_SETUP_CODE` from `.env` and restart the API after the first successful setup. This route cannot register additional organizations or promote users afterward.
 
 Alternatively, after migrations, provision the first organization administrator from a trusted local shell:
 
@@ -113,7 +113,7 @@ Alternatively, after migrations, provision the first organization administrator 
 python -m app.cli create-admin --organization-name "Your Organization" --organization-type office
 ```
 
-The command prompts for administrator identity and password without echoing the password. It prints a one-time employee enrollment code after creation; distribute it only to verified employees through a secure channel. CLI bootstrap also closes web registration because an organization now exists. There is no self-service enrollment-code rotation/expiration flow yet, so deployers must handle the code as a secret and plan controlled rotation before broad rollout.
+The command prompts for administrator identity and password without echoing the password. It prints an initial company enrollment code after creation; distribute it only to verified employees through a secure channel. CLI bootstrap also closes web registration because an organization now exists. Admins can rotate the code from the portal, but codes do not expire automatically and are reusable until rotated.
 
 ## Tests
 
@@ -142,7 +142,9 @@ Tests use a per-test in-memory SQLite database with foreign keys enabled and do 
 - Attendance uses one organization timezone, configured work start/grace period, and working days. The dashboard classifies missing attendance as absent only after a configured working day is complete; incomplete, nonworking, or future days are unknown. The UI does not define how `lateThresholdMinutes` differs from grace, so check-in status uses grace only. Overnight shifts, per-employee shifts, holidays, early-departure deductions, and employee location capture are not implemented. Browser GPS is untrusted and does not provide anti-spoofing assurance.
 - Attendance reset actions create reviewable correction requests rather than deleting history. Admin review and state transitions are recorded.
 - Salary advances and repayments preserve transaction history and use decimal amounts; repayment cannot exceed the outstanding balance and requires an idempotency key.
-- Employee registration requires an active pre-created employee profile plus matching name, email, and phone and an organization enrollment code. Email ownership verification and enrollment-code expiry/rotation are not implemented.
+- Employee self-registration requires a current company code, employee-provided name, email, phone number, and password. It creates a pending employment profile and sends an actionable notification to active organization admins. Admins complete employee code, job details, salary, and leave allocation from the employee edit page; they cannot change the employee-provided name. Employee accounts can sign in before that profile is complete.
+- The company code is stored as a password hash, shown only when generated, reusable until rotated, and rotation invalidates the previous code. There is no per-employee invite or automatic expiry. Email/phone ownership verification is not implemented; admins should verify new registrations before completing the profile.
+- Employees may log in with their registered email or phone and password. If a phone number matches multiple accounts, use email instead.
 - Admin-created employees receive a linked login account using the email and initial password entered in the employee form. The password is Argon2-hashed, excluded from responses, and should be shared with the employee through a secure channel. Employees can sign in immediately when created as active; inactive employee accounts remain blocked until activated. Password changes are not yet available in the UI.
 - Access tokens are short-lived bearer JWTs; logout clears the frontend token but there is no server-side revocation/refresh-token flow.
 - The frontend audit marks each mock-driven feature and unresolved contract decision; consult it before enabling the system for payroll or employee self-enrollment.

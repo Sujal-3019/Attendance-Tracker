@@ -189,7 +189,11 @@ def get_employee_balances(db: Session, organization_id: UUID, employee_id: UUID)
     ).all()
     result = []
     for leave_type, balance in rows:
-        allocated = Decimal(leave_type.annual_allocation if leave_type.paid else 0)
+        allocated = (
+            balance.allocated_days
+            if balance
+            else Decimal(leave_type.annual_allocation if leave_type.paid else 0)
+        )
         used = balance.used_days if balance else Decimal("0")
         result.append(
             {

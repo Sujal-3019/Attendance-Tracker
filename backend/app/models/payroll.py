@@ -7,6 +7,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     JSON,
     Numeric,
     String,
@@ -113,6 +114,13 @@ class OvertimeRequest(TimestampMixin, Base):
 
 class Notification(TimestampMixin, Base):
     __tablename__ = "notifications"
+    __table_args__ = (
+        Index(
+            "ix_notifications_onboarding_employee",
+            "organization_id",
+            "related_employee_id",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -124,4 +132,8 @@ class Notification(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(150), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     category: Mapped[str] = mapped_column(String(40), nullable=False)
+    action_url: Mapped[str | None] = mapped_column(String(300))
+    related_employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("employees.id", ondelete="SET NULL")
+    )
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -52,6 +52,18 @@ def test_employee_cannot_read_payroll_policy(client):
     assert response.status_code == 403
 
 
+def test_employee_cannot_generate_company_code(client):
+    test_client, data = client
+    headers = _login(test_client, data["employee_email"], data["password"])
+
+    response = test_client.post(
+        "/api/v1/settings/company-code",
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+
+
 def test_attendance_policy_can_be_saved_and_read_back(client):
     test_client, data = client
     headers = _login(test_client, data["admin_email"], data["password"])

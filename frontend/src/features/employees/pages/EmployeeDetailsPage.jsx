@@ -1,16 +1,46 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import AppShell from "@/app/layouts/AppShell";
 
 import EmployeeDetails from "../components/EmployeeDetails";
-import { getEmployeeDetails } from "../services/employeeService";
+import {
+  getEmployeeDetails,
+  updateEmployeeStatus,
+} from "../services/employeeService";
 
 function EmployeeDetailsPage() {
   const { employeeId } = useParams();
 
   const [employee, setEmployee] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [statusError, setStatusError] = useState("");
+
+  const handleStatusChange = useCallback(async (currentEmployee, status) => {
+    const action = status === "Inactive" ? "deactivate" : "activate";
+    if (
+      !window.confirm(
+        `${action[0].toUpperCase()}${action.slice(1)} ${currentEmployee.name}?`,
+      )
+    ) {
+      return;
+    }
+
+    setStatusUpdating(true);
+    setStatusError("");
+    try {
+      const updatedEmployee = await updateEmployeeStatus(
+        currentEmployee.id,
+        status,
+      );
+      setEmployee((current) => ({ ...current, ...updatedEmployee }));
+    } catch (error) {
+      setStatusError(error.message || `Unable to ${action} employee.`);
+    } finally {
+      setStatusUpdating(false);
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -43,7 +73,12 @@ function EmployeeDetailsPage() {
       {loading ? (
         <EmployeeDetailsSkeleton />
       ) : employee ? (
-        <EmployeeDetails employee={employee} />
+        <EmployeeDetails
+          employee={employee}
+          onStatusChange={handleStatusChange}
+          statusUpdating={statusUpdating}
+          statusError={statusError}
+        />
       ) : (
         <EmployeeNotFound />
       )}

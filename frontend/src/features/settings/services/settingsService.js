@@ -11,6 +11,12 @@ export function updateOrganizationSettings(settings) {
   });
 }
 
+export function generateCompanyCode() {
+  return apiRequest("/api/v1/settings/company-code", {
+    method: "POST",
+  });
+}
+
 export function getAttendancePolicy() {
   return apiRequest("/api/v1/settings/attendance-policy");
 }

@@ -59,11 +59,28 @@ const employeeFields = {
   status: z
     .string()
     .min(1, "Select employee status"),
+
+  wageModel: z
+    .enum(["Monthly", "Daily", "Hourly"]),
+
+  baseWage: z.coerce
+    .number()
+    .min(0, "Salary cannot be negative")
+    .max(100000000, "Salary is too large"),
+
+  leaveAllocations: z.array(
+    z.object({
+      leaveTypeId: z.string().uuid(),
+      allocatedDays: z.coerce.number().min(0).max(365),
+    }),
+  ),
 };
 
 export const employeeSchema = z.object(employeeFields);
 export const employeeUpdateSchema = z.object(
   Object.fromEntries(
-    Object.entries(employeeFields).filter(([field]) => field !== "password"),
+    Object.entries(employeeFields).filter(
+      ([field]) => !["password", "name"].includes(field),
+    ),
   ),
 );

@@ -9,6 +9,7 @@ from app.api.deps import get_db
 from app.models.user import User
 from app.schemas.settings import (
     AttendancePolicy,
+    CompanyCodePublic,
     OrganizationProfile,
     PayrollPolicy,
     WorkLocationCreate,
@@ -21,6 +22,14 @@ from app.services import settings as settings_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 AdminUser = Annotated[User, Depends(require_roles("admin"))]
+
+
+@router.post("/company-code", response_model=CompanyCodePublic)
+def create_company_code(
+    user: AdminUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return settings_service.generate_company_code(db, user.organization_id)
 
 
 @router.get("/organization")

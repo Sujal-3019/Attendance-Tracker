@@ -1,4 +1,6 @@
 import secrets
+from datetime import UTC, datetime
+from uuid import uuid4
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -9,7 +11,9 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.employee import Employee
+from app.models.leave import LeaveBalance, LeaveType
 from app.models.organization import Organization
+from app.models.payroll import Notification
 from app.models.user import User
 from app.schemas.auth import (
     AdminRegistrationRequest,
@@ -31,6 +35,9 @@ def _user_public(user: User) -> UserPublic:
         role=user.role,
         organization_id=user.organization_id,
         employee_id=user.employee_id,
+        profile_complete=(
+            user.employee.profile_complete if user.employee is not None else True
+        ),
     )
 
 
@@ -43,7 +50,18 @@ def lock_first_admin_registration(db: Session) -> None:
 
 
 def authenticate(db: Session, payload: LoginRequest) -> AuthResponse:
-    user = db.scalar(select(User).where(func.lower(User.email) == payload.email.lower()))
+    identifier = payload.email.strip()
+    if "@" in identifier:
+        matches = db.scalars(
+            select(User).where(func.lower(User.email) == identifier.lower())
+        ).all()
+        user = matches[0] if len(matches) == 1 else None
+    else:
+        phone = "".join(character for character in identifier if character.isdigit())
+        if len(phone) == 12 and phone.startswith("91"):
+            phone = phone[2:]
+        matches = db.scalars(select(User).where(User.phone == phone)).all()
+        user = matches[0] if len(matches) == 1 else None
     if user is None or not user.is_active or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -144,34 +162,109 @@ def register_employee(db: Session, payload: EmployeeRegistrationRequest) -> Auth
     if organization is None:
         raise HTTPException(status_code=400, detail="Invalid organization code")
 
+    admins = db.scalars(
+        select(User).where(
+            User.organization_id == organization.id,
+            User.role == "admin",
+            User.is_active.is_(True),
+        )
+    ).all()
+    if not admins:
+        raise HTTPException(
+            status_code=409,
+            detail="Employee registration is temporarily unavailable",
+        )
+
+    email = str(payload.email).lower()
     employee = db.scalar(
         select(Employee).where(
             Employee.organization_id == organization.id,
-            func.lower(Employee.email) == payload.email.lower(),
+            func.lower(Employee.email) == email,
         )
     )
-    if employee is None or employee.status != "Active":
-        raise HTTPException(status_code=403, detail="Employee enrollment is not available")
-    if employee.user is not None:
-        raise HTTPException(status_code=409, detail="An account already exists for this employee")
-    if employee.full_name.casefold() != payload.full_name.strip().casefold() or employee.phone != payload.phone:
-        raise HTTPException(status_code=403, detail="Employee details do not match the employee record")
+    if employee is not None:
+        raise HTTPException(status_code=409, detail="An account already exists for this email")
+    duplicate_phone = db.scalar(
+        select(User.id).where(
+            User.organization_id == organization.id,
+            User.phone == payload.phone,
+        )
+    )
+    if duplicate_phone is None:
+        duplicate_phone = db.scalar(
+            select(Employee.id).where(
+                Employee.organization_id == organization.id,
+                Employee.phone == payload.phone,
+            )
+        )
+    if duplicate_phone is not None:
+        raise HTTPException(status_code=409, detail="An account already exists for this phone number")
 
+    employee_id = uuid4()
+    employee = Employee(
+        id=employee_id,
+        organization_id=organization.id,
+        employee_code=f"PENDING-{employee_id.hex[:8].upper()}",
+        full_name=payload.full_name.strip(),
+        email=email,
+        phone=payload.phone,
+        department="Pending setup",
+        designation="Pending setup",
+        manager="",
+        employment_type="Pending setup",
+        work_mode="Pending setup",
+        work_location=None,
+        joining_date=datetime.now(UTC).date(),
+        status="Active",
+        profile_complete=False,
+        wage_model="Monthly",
+        base_wage=0,
+    )
+    db.add(employee)
+    db.flush()
+    for leave_type in db.scalars(
+        select(LeaveType).where(
+            LeaveType.organization_id == organization.id,
+            LeaveType.is_active.is_(True),
+        )
+    ).all():
+        db.add(
+            LeaveBalance(
+                organization_id=organization.id,
+                employee_id=employee.id,
+                leave_type_id=leave_type.id,
+                balance_year=datetime.now(UTC).year,
+                allocated_days=0,
+                used_days=0,
+            )
+        )
     user = User(
         organization_id=organization.id,
         employee_id=employee.id,
-        email=employee.email,
+        email=email,
         full_name=employee.full_name,
-        phone=employee.phone,
+        phone=payload.phone,
         password_hash=hash_password(payload.password),
         role="employee",
     )
     db.add(user)
+    for admin in admins:
+        db.add(
+            Notification(
+                organization_id=organization.id,
+                user_id=admin.id,
+                title="Complete new employee profile",
+                message=f"A new employee registered with {email}. Add their employee ID, role, salary, leave allocation, and reporting details.",
+                category="EMPLOYEE_ONBOARDING",
+                action_url=f"/employees/{employee.id}/edit",
+                related_employee_id=employee.id,
+            )
+        )
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="An account already exists for this employee") from None
+        raise HTTPException(status_code=409, detail="An account already exists for this email or phone") from None
     db.refresh(user)
     token, expires_in = create_access_token(user.id)
     return AuthResponse(

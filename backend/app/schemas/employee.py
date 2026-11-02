@@ -2,9 +2,14 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import EmailStr, Field
+from pydantic import ConfigDict, EmailStr, Field, model_validator
 
 from app.schemas.common import ApiSchema
+
+
+class EmployeeLeaveAllocation(ApiSchema):
+    leave_type_id: UUID
+    allocated_days: Decimal = Field(ge=0, le=365, max_digits=6, decimal_places=2)
 
 
 class EmployeeCreate(ApiSchema):
@@ -23,10 +28,20 @@ class EmployeeCreate(ApiSchema):
     status: str = Field(default="Active", pattern="^(Active|Inactive)$")
     wage_model: str = Field(default="Monthly", pattern="^(Monthly|Daily|Hourly)$")
     base_wage: Decimal = Field(default=Decimal("0"), ge=0, max_digits=12, decimal_places=2)
+    leave_allocations: list[EmployeeLeaveAllocation] = Field(default_factory=list, max_length=50)
+
+    @model_validator(mode="after")
+    def validate_unique_leave_types(self):
+        leave_type_ids = [item.leave_type_id for item in self.leave_allocations]
+        if len(leave_type_ids) != len(set(leave_type_ids)):
+            raise ValueError("Leave allocation types must be unique")
+        return self
 
 
 class EmployeeUpdate(ApiSchema):
-    name: str | None = Field(default=None, min_length=2, max_length=100)
+    model_config = ConfigDict(extra="forbid")
+
+    employee_code: str | None = Field(default=None, min_length=3, max_length=30)
     email: EmailStr | None = None
     phone: str | None = Field(default=None, min_length=10, max_length=20)
     department: str | None = Field(default=None, min_length=1, max_length=100)
@@ -38,6 +53,15 @@ class EmployeeUpdate(ApiSchema):
     joining_date: date | None = None
     wage_model: str | None = Field(default=None, pattern="^(Monthly|Daily|Hourly)$")
     base_wage: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    leave_allocations: list[EmployeeLeaveAllocation] | None = Field(default=None, max_length=50)
+
+    @model_validator(mode="after")
+    def validate_unique_leave_types(self):
+        if self.leave_allocations is not None:
+            leave_type_ids = [item.leave_type_id for item in self.leave_allocations]
+            if len(leave_type_ids) != len(set(leave_type_ids)):
+                raise ValueError("Leave allocation types must be unique")
+        return self
 
 
 class EmployeePublic(ApiSchema):
@@ -54,5 +78,6 @@ class EmployeePublic(ApiSchema):
     location: str | None
     joining_date: date
     status: str
+    profile_complete: bool
     wage_model: str
     base_wage: Decimal

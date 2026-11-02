@@ -75,7 +75,8 @@ export const loginSchema = z.object({
   email: z
     .string()
     .trim()
-    .email("Please enter a valid email address."),
+    .min(3, "Enter your email address or phone number.")
+    .max(254, "Login identifier is too long."),
 
   password: z
     .string()
@@ -88,7 +89,7 @@ export const employeeRegisterSchema = z
       .string()
       .trim()
       .min(4, "Organization code must be at least 4 characters.")
-      .max(30, "Organization code cannot exceed 30 characters."),
+      .max(100, "Organization code cannot exceed 100 characters."),
 
     fullName: z
       .string()
@@ -114,9 +115,4 @@ export const employeeRegisterSchema = z
       .min(8, "Password must be at least 8 characters.")
       .max(128, "Password cannot exceed 128 characters."),
 
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match.",
-    path: ["confirmPassword"],
   });

@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -15,6 +15,7 @@ import {
   createEmployee,
   updateEmployee,
 } from "../services/employeeService";
+import { getLeavePolicies } from "@/features/leaves/services/leavePolicyService";
 
 const departments = [
   "Engineering",
@@ -37,8 +38,6 @@ const workModes = ["Office", "Remote", "Hybrid"];
 
 const locations = ["Head Office", "Remote"];
 
-const managers = ["Demo Admin"];
-
 const statuses = ["Active", "Inactive"];
 
 const defaultValues = {
@@ -55,11 +54,19 @@ const defaultValues = {
   workMode: "",
   location: "",
   status: "Active",
+  wageModel: "Monthly",
+  baseWage: 0,
+  leaveAllocations: [],
 };
 
 function EmployeeForm({ employee = null }) {
   const navigate = useNavigate();
   const [submitError, setSubmitError] = useState("");
+  const [leaveTypesLoading, setLeaveTypesLoading] = useState(!employee);
+  const [leaveTypesError, setLeaveTypesError] = useState("");
+  const [leaveAllocations, setLeaveAllocations] = useState(
+    employee?.leaveAllocations ?? [],
+  );
 
   const isEditing = Boolean(employee);
 
@@ -71,15 +78,24 @@ function EmployeeForm({ employee = null }) {
           email: employee.email ?? "",
           password: "",
           phone: employee.phone?.replace("+91 ", "") ?? "",
-          employeeId: employee.id ?? "",
+          employeeId: employee.employeeCode ?? "",
           department: employee.department ?? "",
           designation: employee.designation ?? "",
           employmentType: employee.employmentType ?? "",
           joiningDate: employee.joiningDate ?? "",
-          manager: employee.manager ?? "Demo Admin",
+          manager: employee.manager ?? "",
           workMode: employee.workMode ?? "",
           location: employee.location ?? "",
           status: employee.status ?? "Active",
+          wageModel: employee.wageModel ?? "Monthly",
+          baseWage: Number(employee.baseWage ?? 0),
+          leaveAllocations: (employee.leaveAllocations ?? []).map(
+            (allocation) => ({
+              leaveTypeId: allocation.leaveTypeId,
+              allocatedDays: Number(allocation.allocatedDays ?? 0),
+              name: allocation.name,
+            }),
+          ),
         }
       : defaultValues,
   });
@@ -87,11 +103,61 @@ function EmployeeForm({ employee = null }) {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = form;
 
+  useEffect(() => {
+    if (employee) {
+      return;
+    }
+
+    let mounted = true;
+    getLeavePolicies()
+      .then((policies) => {
+        if (mounted) {
+          setValue(
+            "leaveAllocations",
+            policies
+              .filter((policy) => policy.status === "Active")
+              .map((policy) => ({
+                leaveTypeId: policy.id,
+                allocatedDays: Number(policy.annualAllocation),
+                name: policy.name,
+              })),
+          );
+          setLeaveAllocations(
+            policies
+              .filter((policy) => policy.status === "Active")
+              .map((policy) => ({
+                leaveTypeId: policy.id,
+                allocatedDays: Number(policy.annualAllocation),
+                name: policy.name,
+              })),
+          );
+        }
+      })
+      .catch((error) => {
+        if (mounted) {
+          setLeaveTypesError(error.message || "Unable to load leave types.");
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setLeaveTypesLoading(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [employee, setValue]);
+
   async function onSubmit(values) {
     setSubmitError("");
+    if (leaveTypesLoading || leaveTypesError) {
+      return;
+    }
     try {
       if (isEditing) {
         await updateEmployee(employee.id, values);
@@ -106,6 +172,12 @@ function EmployeeForm({ employee = null }) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      {employee && !employee.profileComplete && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+          This employee registered with a company code. Complete their
+          employee ID, employment, salary, and leave details to finish onboarding.
+        </div>
+      )}
       {submitError && (
         <div
           role="alert"
@@ -131,11 +203,26 @@ function EmployeeForm({ employee = null }) {
             required
             error={errors.name?.message}
           >
-            <Input
-              {...register("name")}
-              placeholder="e.g. Aarav Sharma"
-              className="h-10 rounded-xl"
-            />
+            {isEditing ? (
+              <>
+                <Input
+                  value={employee.name}
+                  readOnly
+                  aria-readonly="true"
+                  className="h-10 rounded-xl"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Employees provide their name during registration. Admins
+                  cannot change it.
+                </p>
+              </>
+            ) : (
+              <Input
+                {...register("name")}
+                placeholder="e.g. Aarav Sharma"
+                className="h-10 rounded-xl"
+              />
+            )}
           </FormField>
 
           <FormField
@@ -192,7 +279,7 @@ function EmployeeForm({ employee = null }) {
             <Input
               {...register("employeeId")}
               placeholder="e.g. EMP-009"
-              disabled={isEditing}
+              disabled={isEditing && employee.profileComplete}
               className="h-10 rounded-xl"
             />
           </FormField>
@@ -271,15 +358,11 @@ function EmployeeForm({ employee = null }) {
             required
             error={errors.manager?.message}
           >
-            <SelectField {...register("manager")}>
-              <option value="">Select manager</option>
-
-              {managers.map((manager) => (
-                <option key={manager} value={manager}>
-                  {manager}
-                </option>
-              ))}
-            </SelectField>
+            <Input
+              {...register("manager")}
+              placeholder="Manager name"
+              className="h-10 rounded-xl"
+            />
           </FormField>
         </div>
       </section>
@@ -330,6 +413,87 @@ function EmployeeForm({ employee = null }) {
         </div>
       </section>
 
+      {/* Compensation and leave allocation */}
+      <section className="rounded-2xl border border-border/60 bg-card/55 p-5 shadow-sm backdrop-blur-sm sm:p-6">
+        <div className="mb-6">
+          <p className="text-sm font-semibold">Salary and leave allocation</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Set the employee's base wage and annual allocation for each active
+            leave type.
+          </p>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-2">
+          <FormField label="Wage model" required error={errors.wageModel?.message}>
+            <SelectField {...register("wageModel")}>
+              {["Monthly", "Daily", "Hourly"].map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </SelectField>
+          </FormField>
+
+          <FormField label="Base salary / wage" required error={errors.baseWage?.message}>
+            <Input
+              {...register("baseWage", { valueAsNumber: true })}
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              className="h-10 rounded-xl"
+            />
+          </FormField>
+        </div>
+
+        <div className="mt-6 space-y-4">
+          <h3 className="text-sm font-medium">Leave days per year</h3>
+          {leaveTypesError && (
+            <p role="alert" className="text-sm text-destructive">
+              {leaveTypesError}
+            </p>
+          )}
+          {leaveTypesLoading ? (
+            <p className="text-sm text-muted-foreground">Loading leave types...</p>
+          ) : leaveAllocations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No active leave types are configured. You can add them from the
+              Leaves page.
+            </p>
+          ) : (
+            leaveAllocations.map((allocation, index) => {
+              const leaveType = employee?.leaveAllocations?.find(
+                (item) => item.leaveTypeId === allocation.leaveTypeId,
+              );
+              return (
+                <div
+                  key={allocation.leaveTypeId}
+                  className="grid items-center gap-3 sm:grid-cols-[1fr_180px]"
+                >
+                  <label
+                    htmlFor={`leave-allocation-${allocation.leaveTypeId}`}
+                    className="text-sm"
+                  >
+                    {leaveType?.name ?? allocation.name ?? `Leave type ${index + 1}`}
+                  </label>
+                  <Input
+                    id={`leave-allocation-${allocation.leaveTypeId}`}
+                    {...register(`leaveAllocations.${index}.allocatedDays`, {
+                      valueAsNumber: true,
+                    })}
+                    type="number"
+                    min="0"
+                    max="365"
+                    step="0.5"
+                    className="h-10 rounded-xl"
+                  />
+                </div>
+              );
+            })
+          )}
+        </div>
+      </section>
+
       {/* Status */}
       <section className="rounded-2xl border border-border/60 bg-card/55 p-5 shadow-sm backdrop-blur-sm sm:p-6">
         <div className="mb-6">
@@ -373,7 +537,7 @@ function EmployeeForm({ employee = null }) {
         <Button
           type="submit"
           className="rounded-xl"
-          disabled={isSubmitting}
+          disabled={isSubmitting || leaveTypesLoading || Boolean(leaveTypesError)}
         >
           {isSubmitting ? (
             <Loader2 className="size-4 animate-spin" />

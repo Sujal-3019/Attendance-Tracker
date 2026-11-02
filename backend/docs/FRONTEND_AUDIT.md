@@ -113,7 +113,7 @@ The current UI uses string IDs such as `EMP-001` and `ACR-001`; these are displa
 ## 6. Missing, ambiguous, or contradictory rules
 
 - Public administrator registration conflicts with the requirement that no public endpoint can grant administrator privileges. The web flow is therefore limited to one initial organization and requires a private server-configured setup code; it cannot add organizations or promote accounts after bootstrap.
-- Employee sign-up accepts a fixed demo organization code. Production enrollment needs a per-organization invite/code lifecycle, expiration, and distribution policy. Do not retain the demo code.
+- Employee sign-up originally accepted a fixed demo organization code. The implemented backend now uses an admin-generated, reusable company code that can be rotated; email/phone ownership verification and automatic expiry remain unimplemented.
 - Timezone/shift assignment to employees and treatment of overnight shifts are unspecified. Attendance policy values are configurable, but a single organization timezone is used initially. The meaning of `lateThresholdMinutes` relative to `gracePeriodMinutes` is not specified by the UI; check-in status currently uses the grace period only, and no guessed late/absence deductions are applied.
 - The exact meanings of half-day, paid/unpaid leave, leave-year boundaries, holidays, carry-forward expiry, and whether pending requests reserve balances are unspecified. Pending requests do not deduct; approval creates a ledger transaction exactly once.
 - Payroll settings expose formulas but legal/tax/statutory treatment, payroll cutoff, rounding, overtime eligibility, historical recalculation rules, and currency minor-unit policy need confirmation. Finalized payroll must snapshot inputs and not recalculate silently.
@@ -156,5 +156,14 @@ Feature mapping status at audit time: all listed screens and workflows exist in 
 - **Frontend integration:** feature services use the shared HTTP helper and API contracts; simulated login/admin registration and fixture-backed feature service behavior were removed. Access tokens remain memory-only. Some unsupported payroll actions fail explicitly rather than returning mock success.
 - **Verification:** 12 isolated pytest cases pass; frontend production build and Oxlint complete successfully; Alembic reports no model/schema drift. Before migration, the configured database was verified read-only and contained only an empty `alembic_version` table. The additive initial migration is now applied at revision `4ab385a0c838`; no existing application tables or data were replaced. `/health` and `/health/db` both return 200 against the configured database. Build chunk-size, linter, and Starlette/httpx deprecation warnings are non-fatal.
 - **Remaining business decisions:** confirmed payroll formula/legal rules; shift and overnight handling; leave year/holiday/carry-forward policies; employee enrollment-code lifecycle and email verification; advance approval/repayment policy; and deployment-grade token revocation and operational monitoring.
+
+### Employee self-registration and onboarding update (November 2026)
+
+- Admins can generate or rotate the company code from the new **Company Code** navigation item. The plaintext is shown only in the successful generation response; rotation invalidates the previous code.
+- Employee registration asks only for company code, email, phone, and password. It creates a sign-in-capable employee account with an incomplete profile rather than requiring an employee profile to be pre-created.
+- Every active admin receives an actionable in-app notification linking to the employee edit page. Admin completion covers employee code/name, department, designation, manager, work type/location, wage model/base wage, and allocations for active leave types.
+- Existing employees default to `profile_complete = true` in the additive Alembic migration. Self-registered employees remain incomplete until the admin details and leave allocations are saved. The frontend displays that state to employees and admins.
+- Employee login now accepts email or phone. Ambiguous phone matches require email instead.
+- Automatic code expiry, per-employee invitations, and contact ownership verification remain open operational/security decisions.
 
 The API contract, including methods, access rules, request/response shapes, errors, and corresponding frontend service functions, is maintained in [API_CONTRACT.md](./API_CONTRACT.md). Setup and migration instructions are in [README.md](../README.md).

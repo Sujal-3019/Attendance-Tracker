@@ -4,6 +4,10 @@ export function getAdminRegistrationStatus() {
   return apiRequest("/api/v1/auth/admin-registration/status");
 }
 
+export function getCurrentUser() {
+  return apiRequest("/api/v1/auth/me");
+}
+
 export async function registerAdmin(payload) {
   const result = await apiRequest("/api/v1/auth/register/admin", {
     method: "POST",

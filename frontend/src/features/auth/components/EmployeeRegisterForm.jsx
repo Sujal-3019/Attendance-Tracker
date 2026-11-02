@@ -13,7 +13,6 @@ import { registerEmployee } from "../services/authService";
 
 function EmployeeRegisterForm() {
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [registrationResult, setRegistrationResult] = useState(null);
 
@@ -29,7 +28,6 @@ function EmployeeRegisterForm() {
       email: "",
       phone: "",
       password: "",
-      confirmPassword: "",
     },
   });
 
@@ -81,9 +79,8 @@ function EmployeeRegisterForm() {
 
           <Input
             id="organizationCode"
-            placeholder="e.g. ATTENDLY01"
+            placeholder="Paste company code"
             autoComplete="off"
-            className="uppercase"
             {...register("organizationCode")}
           />
 
@@ -116,14 +113,12 @@ function EmployeeRegisterForm() {
           <label htmlFor="fullName" className="text-sm font-medium">
             Full name
           </label>
-
           <Input
             id="fullName"
             placeholder="Your full name"
             autoComplete="name"
             {...register("fullName")}
           />
-
           {errors.fullName && (
             <p className="text-xs text-destructive">
               {errors.fullName.message}
@@ -211,47 +206,6 @@ function EmployeeRegisterForm() {
           )}
         </div>
 
-        <div className="space-y-2">
-          <label htmlFor="confirmPassword" className="text-sm font-medium">
-            Confirm password
-          </label>
-
-          <div className="relative">
-            <Input
-              id="confirmPassword"
-              type={showConfirmPassword ? "text" : "password"}
-              placeholder="Re-enter your password"
-              autoComplete="new-password"
-              className="pr-10"
-              {...register("confirmPassword")}
-            />
-
-            <button
-              type="button"
-              onClick={() =>
-                setShowConfirmPassword((current) => !current)
-              }
-              className="absolute right-0 top-0 flex h-10 w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-              aria-label={
-                showConfirmPassword
-                  ? "Hide confirm password"
-                  : "Show confirm password"
-              }
-            >
-              {showConfirmPassword ? (
-                <EyeOff className="size-4" />
-              ) : (
-                <Eye className="size-4" />
-              )}
-            </button>
-          </div>
-
-          {errors.confirmPassword && (
-            <p className="text-xs text-destructive">
-              {errors.confirmPassword.message}
-            </p>
-          )}
-        </div>
       </section>
 
       {submitError && (
