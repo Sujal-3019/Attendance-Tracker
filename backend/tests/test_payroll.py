@@ -52,3 +52,26 @@ def test_salary_advance_repayment_is_idempotent_and_capped(client):
         json={**repayment_payload, "amount": "700.00"},
     )
     assert too_large.status_code == 422
+
+
+def test_employee_can_view_admin_assigned_base_salary(client):
+    test_client, data = client
+    admin_headers = _login(test_client, data["admin_email"], data["password"])
+    employee_headers = _login(
+        test_client, data["employee_email"], data["password"]
+    )
+
+    updated = test_client.patch(
+        f"/api/v1/employees/{data['employee_id']}",
+        headers=admin_headers,
+        json={"baseWage": "73500.00", "wageModel": "Monthly"},
+    )
+    assert updated.status_code == 200
+
+    salary = test_client.get(
+        "/api/v1/me/payroll/projection", headers=employee_headers
+    )
+    assert salary.status_code == 200
+    assert salary.json()["baseWage"] == "73500.00"
+    assert salary.json()["wageModel"] == "Monthly"
+    assert salary.json()["available"] is False

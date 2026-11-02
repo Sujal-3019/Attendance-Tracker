@@ -12,7 +12,10 @@ import {
 
 import { Button } from "@/components/ui/button";
 import EmployeeAppShell from "@/features/employee/layouts/EmployeeAppShell";
-import { getMyPayroll } from "@/features/employee/payroll/services/employeePayrollService";
+import {
+  getMyPayroll,
+  getMySalaryProjection,
+} from "@/features/employee/payroll/services/employeePayrollService";
 
 function formatCurrency(value) {
   return new Intl.NumberFormat("en-IN", {
@@ -112,10 +115,11 @@ function PayrollBreakdown({ record }) {
 
 function EmployeePayrollPage() {
   const [payroll, setPayroll] = useState({
-    employee: null,
     latest: null,
     records: [],
   });
+  const [salary, setSalary] = useState(null);
+  const [salaryLoadError, setSalaryLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -125,9 +129,50 @@ function EmployeePayrollPage() {
     setError("");
 
     try {
-      const result = await getMyPayroll();
-      setPayroll(result);
-      setSelectedRecord(result.latest);
+      const [payrollResult, salaryResult] = await Promise.allSettled([
+        getMyPayroll(),
+        getMySalaryProjection(),
+      ]);
+      if (payrollResult.status === "rejected") {
+        setError(
+          payrollResult.reason.message ||
+            "Unable to load payroll records.",
+        );
+      }
+      if (salaryResult.status === "rejected") {
+        setSalaryLoadError(true);
+        setError((current) =>
+          [
+            current,
+            salaryResult.reason.message ||
+              "Unable to load your assigned salary.",
+          ]
+            .filter(Boolean)
+            .join(" "),
+        );
+      } else {
+        setSalaryLoadError(false);
+        setSalary(salaryResult.value);
+      }
+
+      const records =
+        payrollResult.status === "fulfilled" ? payrollResult.value : [];
+      const normalizedRecords = records.map((record) => {
+        const [year, month] = (record.payrollMonth || "").split("-");
+        return {
+          ...record,
+          month: record.month || month || "",
+          year: record.year || year || "",
+          grossPay: record.grossPay ?? record.grossEarnings,
+          deductions: record.deductions ?? record.totalDeductions,
+          status: record.status || record.payrollStatus,
+        };
+      });
+      setPayroll({
+        latest: normalizedRecords[0] || null,
+        records: normalizedRecords,
+      });
+      setSelectedRecord(normalizedRecords[0] || null);
     } catch (err) {
       setError(err.message || "Unable to load payroll information.");
     } finally {
@@ -188,17 +233,49 @@ function EmployeePayrollPage() {
           <div className="rounded-2xl border border-border/60 bg-card/70 p-10 text-center text-sm text-muted-foreground">
             Loading payroll information...
           </div>
-        ) : !latest ? (
-          <div className="rounded-2xl border border-border/60 bg-card/70 p-10 text-center">
-            <Wallet className="mx-auto size-8 text-muted-foreground" />
-            <h2 className="mt-4 font-semibold">No payroll records yet</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Your payroll information will appear here when a record is
-              available.
-            </p>
-          </div>
+        ) : salaryLoadError ? (
+          <p className="mt-2 text-sm text-destructive">
+            Assigned salary could not be loaded. Please refresh.
+          </p>
         ) : (
           <>
+            <section className="rounded-2xl border border-border/60 bg-card/70 p-5 shadow-sm backdrop-blur-xl sm:p-7">
+              <div className="flex items-start gap-3">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
+                  <Banknote className="size-5" />
+                </div>
+                <div>
+                  <h2 className="font-semibold">Assigned salary</h2>
+                  {Number(salary?.baseWage) > 0 ? (
+                    <>
+                      <p className="mt-2 text-2xl font-semibold tracking-tight">
+                        {formatCurrency(salary.baseWage)}
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {salary.wageModel} wage set by your administrator. This
+                        is your assigned base wage, not a finalized payslip.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Your salary has not been set by an administrator yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            {!latest ? (
+              <div className="rounded-2xl border border-border/60 bg-card/70 p-10 text-center">
+                <Wallet className="mx-auto size-8 text-muted-foreground" />
+                <h2 className="mt-4 font-semibold">No payroll records yet</h2>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Finalized payslips and payment history will appear here when
+                  they are available.
+                </p>
+              </div>
+            ) : (
+              <>
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               <SummaryCard
                 title="Latest net salary"
@@ -349,6 +426,8 @@ function EmployeePayrollPage() {
                 </table>
               </div>
             </section>
+              </>
+            )}
           </>
         )}
       </div>

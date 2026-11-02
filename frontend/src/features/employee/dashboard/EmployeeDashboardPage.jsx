@@ -152,19 +152,12 @@ function EmployeeDashboardPage() {
                                 </div>
 
                                 <span className="text-sm font-medium text-muted-foreground">
-                                    Projected salary
-                                </span>
-
-                                <span className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                                    Estimated
+                                    Assigned salary
                                 </span>
                             </div>
 
                             <p className="mt-5 text-sm text-muted-foreground">
-                                Estimated take-home pay
-                                {salaryProjection?.period
-                                    ? ` · ${salaryProjection.period.month} ${salaryProjection.period.year}`
-                                    : ""}
+                                Base wage set by your administrator
                             </p>
 
                             {salaryLoading ? (
@@ -172,10 +165,31 @@ function EmployeeDashboardPage() {
                                     className="mt-2 h-10 w-48 animate-pulse rounded-lg bg-muted"
                                     aria-label="Loading salary projection"
                                 />
+                            ) : Number(salaryProjection?.baseWage) > 0 ? (
+                                <>
+                                    <p className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
+                                        {formatCurrency(salaryProjection.baseWage)}
+                                    </p>
+                                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                                        {salaryProjection.wageModel} wage. This is your
+                                        assigned base salary; finalized pay may differ.
+                                    </p>
+                                    {salaryProjectionUnavailable && (
+                                        <p className="mt-2 text-sm text-muted-foreground">
+                                            {salaryProjection.reason ||
+                                                "A take-home projection is not available yet."}
+                                        </p>
+                                    )}
+                                </>
+                            ) : salaryError ? (
+                                <p className="mt-3 text-sm text-destructive">
+                                    Assigned salary could not be loaded. Please refresh.
+                                </p>
                             ) : salaryProjectionUnavailable ? (
                                 <p className="mt-3 text-sm text-muted-foreground">
-                                    {salaryProjection?.reason ||
-                                        "Salary projection is temporarily unavailable. Please try again later."}
+                                    {Number(salaryProjection?.baseWage) <= 0
+                                        ? "Your salary has not been set by an administrator yet."
+                                        : salaryProjection?.reason}
                                 </p>
                             ) : (
                                 <>
@@ -184,8 +198,8 @@ function EmployeeDashboardPage() {
                                     </p>
 
                                     <p className="mt-2 max-w-lg text-sm leading-6 text-muted-foreground">
-                                        Your estimated salary after currently configured additions and
-                                        deductions. The final amount may change when payroll is finalized.
+                                        Estimated take-home pay. The final amount may
+                                        change when payroll is finalized.
                                     </p>
                                 </>
                             )}
@@ -200,33 +214,33 @@ function EmployeeDashboardPage() {
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
-                            <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                                <p className="text-xs text-muted-foreground">Gross earnings</p>
+                            {!salaryProjectionUnavailable && (
+                                <>
+                                    <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                                        <p className="text-xs text-muted-foreground">Gross earnings</p>
 
-                                <p className="mt-2 text-lg font-semibold">
-                                    {salaryLoading || salaryProjectionUnavailable
-                                        ? "—"
-                                        : formatCurrency(salaryProjection.grossPay)}
-                                </p>
+                                        <p className="mt-2 text-lg font-semibold">
+                                            {formatCurrency(salaryProjection.grossPay)}
+                                        </p>
 
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                    Before deductions
-                                </p>
-                            </div>
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                            Before deductions
+                                        </p>
+                                    </div>
 
-                            <div className="rounded-xl border border-border/60 bg-background/60 p-4">
-                                <p className="text-xs text-muted-foreground">Total deductions</p>
+                                    <div className="rounded-xl border border-border/60 bg-background/60 p-4">
+                                        <p className="text-xs text-muted-foreground">Total deductions</p>
 
-                                <p className="mt-2 text-lg font-semibold">
-                                    {salaryLoading || salaryProjectionUnavailable
-                                        ? "—"
-                                        : formatCurrency(salaryProjection.totalDeductions)}
-                                </p>
+                                        <p className="mt-2 text-lg font-semibold">
+                                            {formatCurrency(salaryProjection.totalDeductions)}
+                                        </p>
 
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                    Currently configured
-                                </p>
-                            </div>
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                            Currently configured
+                                        </p>
+                                    </div>
+                                </>
+                            )}
 
                             {!salaryLoading &&
                                 !salaryProjectionUnavailable &&
