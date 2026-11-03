@@ -1,9 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  AlertCircle,
-  Clock3,
-  MapPin,
-} from "lucide-react";
+import { AlertCircle, Clock3, MapPin } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 
 import AppShell from "@/app/layouts/AppShell";
@@ -16,11 +12,15 @@ import AttendanceCorrectionDialog from "../components/AttendanceCorrectionDialog
 import AttendanceCorrectionTable from "../components/AttendanceCorrectionTable";
 import ForgotCheckoutDialog from "../components/ForgotCheckoutDialog";
 
-import { getCorrectionRequests } from "../services/attendanceCorrectionService";
+import {
+  clearResolvedCorrectionRequests,
+  getCorrectionRequests,
+} from "../services/attendanceCorrectionService";
 import {
   getForgotCheckoutRecords,
 } from "../services/forgotCheckoutService";
 import {
+  getEmployeeAttendanceHistory,
   getAttendanceRecords,
   getAttendanceSummary,
 } from "../services/attendanceService";
@@ -28,6 +28,8 @@ import {
 function AttendancePage() {
   const [summary, setSummary] = useState(null);
   const [records, setRecords] = useState([]);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [attendanceError, setAttendanceError] = useState("");
 
   const [correctionRequests, setCorrectionRequests] = useState([]);
   const [correctionLoading, setCorrectionLoading] =
@@ -54,14 +56,25 @@ function AttendancePage() {
     let mounted = true;
 
     async function loadAttendance() {
-      const [summaryData, recordsData] = await Promise.all([
-        getAttendanceSummary(),
-        getAttendanceRecords(),
-      ]);
+      try {
+        setAttendanceError("");
+        const summaryData = await getAttendanceSummary(
+          selectedDate ? { date: selectedDate } : {},
+        );
+        const date = selectedDate || summaryData.date;
+        const recordsData = await getAttendanceRecords({ date });
 
-      if (mounted) {
-        setSummary(summaryData);
-        setRecords(recordsData);
+        if (mounted) {
+          setSummary(summaryData);
+          setRecords(recordsData);
+          if (!selectedDate) setSelectedDate(date);
+        }
+      } catch (error) {
+        if (mounted) {
+          setAttendanceError(
+            error.message || "Unable to load attendance records.",
+          );
+        }
       }
     }
 
@@ -70,7 +83,20 @@ function AttendancePage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [selectedDate]);
+
+  async function loadEmployeeHistory(employeeId) {
+    return getEmployeeAttendanceHistory(employeeId);
+  }
+
+  async function showToday() {
+    try {
+      const today = await getAttendanceSummary();
+      setSelectedDate(today.date);
+    } catch (error) {
+      setAttendanceError(error.message || "Unable to load today's attendance.");
+    }
+  }
 
   useEffect(() => {
     async function loadCorrectionRequests() {
@@ -172,6 +198,11 @@ function AttendancePage() {
     setForgotCheckoutDialogOpen(true);
   }
 
+  async function handleClearResolvedCorrections() {
+    await clearResolvedCorrectionRequests();
+    setCorrectionRequests(await getCorrectionRequests());
+  }
+
   function handleForgotCheckoutUpdated(updatedRecord) {
     setForgotCheckoutRecords((currentRecords) =>
       currentRecords.map((record) =>
@@ -185,16 +216,33 @@ function AttendancePage() {
   return (
     <AppShell>
       <div className="space-y-8">
-        <AttendanceHeader />
+        <AttendanceHeader selectedDate={selectedDate} onToday={showToday} />
 
         <AttendanceSummary summary={summary} />
 
-        <AttendanceTable records={records} />
+        {attendanceError && (
+          <p
+            role="alert"
+            className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+          >
+            <AlertCircle className="size-4 shrink-0" />
+            {attendanceError}
+          </p>
+        )}
+
+        <AttendanceTable
+          key={selectedDate}
+          records={records}
+          selectedDate={selectedDate}
+          onDateChange={setSelectedDate}
+          onLoadEmployeeHistory={loadEmployeeHistory}
+        />
 
         <AttendanceCorrectionTable
           requests={correctionRequests}
           loading={correctionLoading}
           onReview={handleReviewCorrection}
+          onClearResolved={handleClearResolvedCorrections}
         />
 
         {/* Forgot checkout */}

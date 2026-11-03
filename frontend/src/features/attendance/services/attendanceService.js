@@ -11,3 +11,23 @@ export async function getAttendanceRecords(params = {}) {
   const result = await apiRequest(`/api/v1/attendance?${query}`);
   return result.items;
 }
+
+export async function getEmployeeAttendanceHistory(employeeId) {
+  const records = [];
+  let page = 1;
+  let total = 0;
+
+  do {
+    const query = new URLSearchParams({
+      employee_id: employeeId,
+      page: String(page),
+      page_size: "100",
+    });
+    const result = await apiRequest(`/api/v1/attendance?${query}`);
+    records.push(...result.items);
+    total = result.total;
+    page += 1;
+  } while (records.length < total);
+
+  return records;
+}

@@ -13,8 +13,6 @@ import { Button } from "@/components/ui/button";
 import EmployeeAppShell from "@/features/employee/layouts/EmployeeAppShell";
 import { getMyLeaves, applyForLeave } from "@/features/employee/leaves/services/employeeLeaveService";
 
-const leaveTypes = ["Casual Leave", "Sick Leave", "Earned Leave"];
-
 function formatDate(value) {
   if (!value) return "—";
 
@@ -59,9 +57,9 @@ function StatusBadge({ status }) {
 }
 
 function BalanceCard({ balance }) {
-  const remaining = Math.max(0, balance.allowance - balance.used);
+  const remaining = Number(balance.available ?? balance.allowance - balance.used);
   const percentage =
-    balance.allowance > 0
+    Number(balance.allowance) > 0
       ? Math.min(100, (balance.used / balance.allowance) * 100)
       : 0;
 
@@ -94,12 +92,17 @@ function BalanceCard({ balance }) {
         <span>{balance.used} used</span>
         <span>{balance.allowance} total</span>
       </div>
+      {Number(balance.pending) > 0 && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {balance.pending} days pending approval
+        </p>
+      )}
     </article>
   );
 }
 
 const initialForm = {
-  type: "Casual Leave",
+  type: "",
   startDate: "",
   endDate: "",
   reason: "",
@@ -154,14 +157,49 @@ function EmployeeLeavesPage() {
       return;
     }
 
+    const leaveType = selectedLeaveType;
+    if (!leaveType) {
+      setError("No available allowance for this leave type.");
+      return;
+    }
+
+    const requestedDays =
+      (new Date(`${form.endDate}T00:00:00Z`) -
+        new Date(`${form.startDate}T00:00:00Z`)) /
+        86400000 +
+      1;
+    if (requestedDays > Number(leaveType.maxConsecutiveDays)) {
+      setError(
+        `This leave type allows a maximum of ${leaveType.maxConsecutiveDays} consecutive days.`,
+      );
+      return;
+    }
+    if (requestedDays > Number(leaveType.available)) {
+      setError(
+        `Only ${leaveType.available} days are available for ${leaveType.type}.`,
+      );
+      return;
+    }
+
     setSubmitting(true);
 
     try {
       const request = await applyForLeave(form);
-
       setData((previous) => ({
         ...previous,
         requests: [request, ...previous.requests],
+        balances: previous.balances.map((balance) =>
+          balance.type === request.type
+            ? {
+                ...balance,
+                pending: Number(balance.pending || 0) + Number(request.days),
+                available: Math.max(
+                  0,
+                  Number(balance.available) - Number(request.days),
+                ),
+              }
+            : balance,
+        ),
       }));
 
       setForm(initialForm);
@@ -179,6 +217,13 @@ function EmployeeLeavesPage() {
     statusFilter === "All"
       ? data.requests
       : data.requests.filter((request) => request.status === statusFilter);
+  const availableLeaveTypes = data.balances.filter(
+    (balance) => Number(balance.available) > 0,
+  );
+  const selectedLeaveType =
+    availableLeaveTypes.find((balance) => balance.type === form.type) ||
+    availableLeaveTypes[0] ||
+    null;
 
   const pendingCount = data.requests.filter(
     (request) => request.status === "Pending",
@@ -210,15 +255,24 @@ function EmployeeLeavesPage() {
             </p>
           </div>
 
-          <Button onClick={() => {
-            setError("");
-            setNotice("");
-            setShowForm((visible) => !visible);
-          }}>
+          <Button
+            disabled={loading || availableLeaveTypes.length === 0}
+            onClick={() => {
+              setError("");
+              setNotice("");
+              setShowForm((visible) => !visible);
+            }}
+          >
             <Plus className="mr-2 size-4" />
             {showForm ? "Close form" : "Apply for leave"}
           </Button>
         </header>
+
+        {!loading && availableLeaveTypes.length === 0 && (
+          <p className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            No active leave types with available allowance. Contact your administrator.
+          </p>
+        )}
 
         {error && (
           <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
@@ -262,14 +316,14 @@ function EmployeeLeavesPage() {
                   <select
                     id="leave-type"
                     name="type"
-                    value={form.type}
+                    value={selectedLeaveType?.type || ""}
                     onChange={updateField}
                     className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     required
                   >
-                    {leaveTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
+                    {availableLeaveTypes.map((balance) => (
+                      <option key={balance.code} value={balance.type}>
+                        {balance.type} — {balance.available} days available
                       </option>
                     ))}
                   </select>

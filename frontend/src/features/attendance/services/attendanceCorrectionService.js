@@ -4,6 +4,12 @@ export async function getCorrectionRequests() {
   return apiRequest("/api/v1/attendance/corrections");
 }
 
+export async function clearResolvedCorrectionRequests() {
+  return apiRequest("/api/v1/attendance/corrections/clear", {
+    method: "POST",
+  });
+}
+
 export async function getCorrectionRequestById(requestId) {
   return apiRequest(
     `/api/v1/attendance/corrections/${encodeURIComponent(requestId)}`,

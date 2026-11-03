@@ -56,6 +56,7 @@ def get_attendance(
     user: AdminUser,
     db: Annotated[Session, Depends(get_db)],
     attendance_date: date | None = Query(None, alias="date"),
+    employee_id: UUID | None = Query(None),
     search: str | None = Query(None, max_length=100),
     record_status: str | None = Query(None, alias="status", max_length=20),
     page: int = Query(1, ge=1),
@@ -67,6 +68,7 @@ def get_attendance(
         page=page,
         page_size=page_size,
         attendance_date=attendance_date,
+        employee_id=employee_id,
         search=search,
         status_filter=record_status,
     )
@@ -88,6 +90,17 @@ def get_corrections(
     correction_status: str | None = Query(None, alias="status", max_length=20),
 ) -> list[dict]:
     return attendance_service.list_corrections(db, user.organization_id, status_filter=correction_status)
+
+
+@router.post("/attendance/corrections/clear")
+def clear_resolved_corrections(
+    user: AdminUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    archived_count = attendance_service.archive_resolved_corrections(
+        db, user.organization_id, user.id
+    )
+    return {"archivedCount": archived_count}
 
 
 @router.get("/attendance/corrections/{correction_id}")

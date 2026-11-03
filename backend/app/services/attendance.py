@@ -1,10 +1,12 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from datetime import time as time_type
 from zoneinfo import ZoneInfo
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, literal, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -37,6 +39,93 @@ def organization_local_now(
     return attendance_context(db, organization_id, now)[0]
 
 
+def attendance_grace_deadline(
+    local_now: datetime, policy: dict
+) -> datetime | None:
+    scheduled_start = policy.get("workStartTime")
+    if not scheduled_start:
+        return None
+    hour, minute = map(int, scheduled_start.split(":"))
+    return local_now.replace(
+        hour=hour, minute=minute, second=0, microsecond=0
+    ) + timedelta(minutes=policy.get("gracePeriodMinutes", 0))
+
+
+def mark_absences_for_organization(
+    db: Session, organization_id: UUID, now: datetime | None = None
+) -> int:
+    local_now, policy = attendance_context(db, organization_id, now)
+    if local_now.strftime("%A") not in policy.get("workingDays", []):
+        return 0
+
+    grace_deadline = attendance_grace_deadline(local_now, policy)
+    if grace_deadline is None or local_now <= grace_deadline:
+        return 0
+
+    attendance_exists = select(AttendanceRecord.id).where(
+        AttendanceRecord.employee_id == Employee.id,
+        AttendanceRecord.attendance_date == local_now.date(),
+    ).exists()
+    approved_leave_exists = select(LeaveRequest.id).where(
+        LeaveRequest.organization_id == organization_id,
+        LeaveRequest.employee_id == Employee.id,
+        LeaveRequest.status == "Approved",
+        LeaveRequest.start_date <= local_now.date(),
+        LeaveRequest.end_date >= local_now.date(),
+    ).exists()
+    candidates = select(
+        literal(organization_id),
+        Employee.id,
+        literal(local_now.date()),
+        literal("Absent"),
+        literal(0),
+    ).where(
+        Employee.organization_id == organization_id,
+        Employee.status == "Active",
+        Employee.joining_date <= local_now.date(),
+        ~attendance_exists,
+        ~approved_leave_exists,
+    )
+    insert_for_dialect = {
+        "postgresql": postgresql_insert,
+        "sqlite": sqlite_insert,
+    }.get(db.get_bind().dialect.name)
+    if insert_for_dialect is None:
+        raise RuntimeError("Attendance absence marking requires PostgreSQL or SQLite")
+
+    result = db.execute(
+        insert_for_dialect(AttendanceRecord)
+        .from_select(
+            [
+                "organization_id",
+                "employee_id",
+                "attendance_date",
+                "status",
+                "late_minutes",
+            ],
+            candidates,
+        )
+        .on_conflict_do_nothing(
+            index_elements=[
+                AttendanceRecord.employee_id,
+                AttendanceRecord.attendance_date,
+            ]
+        )
+    )
+    db.commit()
+    return result.rowcount or 0
+
+
+def mark_absences_for_all_organizations(db: Session) -> int:
+    organization_ids = db.scalars(
+        select(OrganizationSettings.organization_id)
+    ).all()
+    return sum(
+        mark_absences_for_organization(db, organization_id)
+        for organization_id in organization_ids
+    )
+
+
 def _record_values(record: AttendanceRecord) -> dict:
     return {
         "id": record.id,
@@ -56,6 +145,7 @@ def _require_employee(user: User) -> UUID:
 
 def get_my_attendance(db: Session, user: User, *, page: int = 1, page_size: int = 30) -> dict:
     employee_id = _require_employee(user)
+    mark_absences_for_organization(db, user.organization_id)
     local_now, _ = attendance_context(db, user.organization_id)
     today = local_now.date()
     rows = db.scalars(
@@ -102,7 +192,8 @@ def check_in(db: Session, user: User) -> dict:
         hour, minute = map(int, scheduled_start.split(":"))
         start = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         late_minutes = max(0, int((local_now - start).total_seconds() // 60))
-        if late_minutes > policy.get("gracePeriodMinutes", 0):
+        grace_deadline = attendance_grace_deadline(local_now, policy)
+        if grace_deadline is not None and local_now > grace_deadline:
             attendance_status = "Late"
     record = db.scalar(
         select(AttendanceRecord)
@@ -114,6 +205,13 @@ def check_in(db: Session, user: User) -> dict:
         .with_for_update()
     )
     if record is not None:
+        if record.status == "Absent" and record.check_in is None:
+            record.check_in = now
+            record.status = attendance_status
+            record.late_minutes = late_minutes
+            db.commit()
+            db.refresh(record)
+            return _record_values(record)
         if record.check_in is not None or record.check_out is not None:
             raise HTTPException(status_code=409, detail="You have already checked in today")
         record.check_in = now
@@ -269,9 +367,11 @@ def list_admin_records(
     page: int,
     page_size: int,
     attendance_date: date | None,
+    employee_id: UUID | None,
     search: str | None,
     status_filter: str | None,
 ) -> dict:
+    mark_absences_for_organization(db, organization_id)
     statement = (
         select(AttendanceRecord, Employee)
         .join(Employee, Employee.id == AttendanceRecord.employee_id)
@@ -279,6 +379,8 @@ def list_admin_records(
     )
     if attendance_date:
         statement = statement.where(AttendanceRecord.attendance_date == attendance_date)
+    if employee_id:
+        statement = statement.where(AttendanceRecord.employee_id == employee_id)
     if status_filter:
         statement = statement.where(AttendanceRecord.status == status_filter)
     if search:
@@ -311,6 +413,8 @@ def attendance_summary(
 ) -> dict:
     local_now, policy = attendance_context(db, organization_id)
     attendance_date = attendance_date or local_now.date()
+    if attendance_date == local_now.date():
+        mark_absences_for_organization(db, organization_id, local_now)
     rows = db.execute(
         select(AttendanceRecord.status, func.count(AttendanceRecord.id))
         .where(
@@ -320,10 +424,17 @@ def attendance_summary(
         .group_by(AttendanceRecord.status)
     ).all()
     counts = {name: count for name, count in rows}
+    total_employees = db.scalar(
+        select(func.count(Employee.id)).where(
+            Employee.organization_id == organization_id,
+            Employee.status == "Active",
+        )
+    ) or 0
     active_employees = db.scalar(
         select(func.count(Employee.id)).where(
             Employee.organization_id == organization_id,
             Employee.status == "Active",
+            Employee.joining_date <= attendance_date,
         )
     ) or 0
     on_leave = db.scalar(
@@ -354,7 +465,7 @@ def attendance_summary(
             else None
         ),
         "total": sum(counts.values()),
-        "totalEmployees": active_employees,
+        "totalEmployees": total_employees,
     }
 
 
@@ -365,7 +476,10 @@ def list_corrections(
         select(AttendanceCorrection, AttendanceRecord, Employee)
         .join(AttendanceRecord, AttendanceRecord.id == AttendanceCorrection.attendance_id)
         .join(Employee, Employee.id == AttendanceRecord.employee_id)
-        .where(AttendanceCorrection.organization_id == organization_id)
+        .where(
+            AttendanceCorrection.organization_id == organization_id,
+            AttendanceCorrection.archived_at.is_(None),
+        )
     )
     if status_filter:
         statement = statement.where(AttendanceCorrection.status == status_filter)
@@ -376,6 +490,25 @@ def list_corrections(
         item.update(employeeName=employee.full_name, employeeCode=employee.employee_code, department=employee.department)
         results.append(item)
     return results
+
+
+def archive_resolved_corrections(
+    db: Session, organization_id: UUID, admin_user_id: UUID
+) -> int:
+    result = db.execute(
+        update(AttendanceCorrection)
+        .where(
+            AttendanceCorrection.organization_id == organization_id,
+            AttendanceCorrection.status.in_(("Approved", "Rejected")),
+            AttendanceCorrection.archived_at.is_(None),
+        )
+        .values(
+            archived_at=datetime.now(UTC),
+            archived_by_user_id=admin_user_id,
+        )
+    )
+    db.commit()
+    return result.rowcount or 0
 
 
 def get_correction(db: Session, organization_id: UUID, correction_id: UUID) -> dict:

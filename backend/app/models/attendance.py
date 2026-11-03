@@ -48,6 +48,10 @@ class AttendanceCorrection(TimestampMixin, Base):
     reviewer_user_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("users.id", ondelete="RESTRICT")
     )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="SET NULL")
+    )
     requested_check_in: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     requested_check_out: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reason: Mapped[str] = mapped_column(Text, nullable=False)

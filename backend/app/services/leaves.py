@@ -4,9 +4,11 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import func, or_, select
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.attendance import AttendanceRecord
 from app.models.employee import Employee
 from app.models.leave import LeaveBalance, LeaveLedgerEntry, LeaveRequest, LeaveType
 from app.models.user import User
@@ -145,6 +147,33 @@ def create_request(db: Session, user: User, payload: LeaveApply) -> dict:
     days = Decimal((end_date - start_date).days + 1)
     if days > leave_type.max_consecutive_days:
         raise HTTPException(status_code=422, detail="Requested duration exceeds the leave type limit")
+    balance = db.scalar(
+        select(LeaveBalance)
+        .where(
+            LeaveBalance.employee_id == employee.id,
+            LeaveBalance.leave_type_id == leave_type.id,
+            LeaveBalance.balance_year == start_date.year,
+        )
+        .with_for_update()
+    )
+    allocated = (
+        balance.allocated_days
+        if balance
+        else Decimal(leave_type.annual_allocation)
+    )
+    used = balance.used_days if balance else Decimal("0")
+    pending = db.scalar(
+        select(func.coalesce(func.sum(LeaveRequest.requested_days), 0)).where(
+            LeaveRequest.organization_id == user.organization_id,
+            LeaveRequest.employee_id == employee.id,
+            LeaveRequest.leave_type_id == leave_type.id,
+            LeaveRequest.start_date >= date(start_date.year, 1, 1),
+            LeaveRequest.start_date < date(start_date.year + 1, 1, 1),
+            LeaveRequest.status == "Pending",
+        )
+    ) or Decimal("0")
+    if used + pending + days > allocated:
+        raise HTTPException(status_code=409, detail="Insufficient leave balance")
     overlap = db.scalar(
         select(LeaveRequest.id).where(
             LeaveRequest.organization_id == user.organization_id,
@@ -187,14 +216,23 @@ def get_employee_balances(db: Session, organization_id: UUID, employee_id: UUID)
         )
         .order_by(LeaveType.name)
     ).all()
+    pending_rows = db.execute(
+        select(LeaveRequest.leave_type_id, func.sum(LeaveRequest.requested_days))
+        .where(
+            LeaveRequest.organization_id == organization_id,
+            LeaveRequest.employee_id == employee_id,
+            LeaveRequest.start_date >= date(year, 1, 1),
+            LeaveRequest.start_date < date(year + 1, 1, 1),
+            LeaveRequest.status == "Pending",
+        )
+        .group_by(LeaveRequest.leave_type_id)
+    ).all()
+    pending_by_type = dict(pending_rows)
     result = []
     for leave_type, balance in rows:
-        allocated = (
-            balance.allocated_days
-            if balance
-            else Decimal(leave_type.annual_allocation if leave_type.paid else 0)
-        )
+        allocated = balance.allocated_days if balance else Decimal(leave_type.annual_allocation)
         used = balance.used_days if balance else Decimal("0")
+        pending = pending_by_type.get(leave_type.id, Decimal("0"))
         result.append(
             {
                 "type": leave_type.name,
@@ -202,6 +240,9 @@ def get_employee_balances(db: Session, organization_id: UUID, employee_id: UUID)
                 "allowance": allocated,
                 "used": used,
                 "remaining": allocated - used,
+                "pending": pending,
+                "available": max(Decimal("0"), allocated - used - pending),
+                "maxConsecutiveDays": leave_type.max_consecutive_days,
                 "paymentType": "Paid" if leave_type.paid else "Unpaid",
             }
         )
@@ -255,56 +296,67 @@ def decide_request(
             raise HTTPException(status_code=409, detail="Leave type is inactive")
         if request.requested_days > leave_type.max_consecutive_days:
             raise HTTPException(status_code=409, detail="Request exceeds the current leave type limit")
-        if leave_type.paid:
-            year = request.start_date.year
-            balance = db.scalar(
-                select(LeaveBalance)
-                .where(
-                    LeaveBalance.employee_id == employee.id,
-                    LeaveBalance.leave_type_id == leave_type.id,
-                    LeaveBalance.balance_year == year,
-                )
-                .with_for_update()
+        year = request.start_date.year
+        balance = db.scalar(
+            select(LeaveBalance)
+            .where(
+                LeaveBalance.employee_id == employee.id,
+                LeaveBalance.leave_type_id == leave_type.id,
+                LeaveBalance.balance_year == year,
             )
-            if balance is None:
-                try:
-                    with db.begin_nested():
-                        balance = LeaveBalance(
-                            organization_id=organization_id,
-                            employee_id=employee.id,
-                            leave_type_id=leave_type.id,
-                            balance_year=year,
-                            allocated_days=Decimal(leave_type.annual_allocation),
-                            used_days=Decimal("0"),
-                        )
-                        db.add(balance)
-                        db.flush()
-                except IntegrityError:
-                    balance = db.scalar(
-                        select(LeaveBalance)
-                        .where(
-                            LeaveBalance.employee_id == employee.id,
-                            LeaveBalance.leave_type_id == leave_type.id,
-                            LeaveBalance.balance_year == year,
-                        )
-                        .with_for_update()
+            .with_for_update()
+        )
+        if balance is None:
+            try:
+                with db.begin_nested():
+                    balance = LeaveBalance(
+                        organization_id=organization_id,
+                        employee_id=employee.id,
+                        leave_type_id=leave_type.id,
+                        balance_year=year,
+                        allocated_days=Decimal(leave_type.annual_allocation),
+                        used_days=Decimal("0"),
                     )
-            if balance is None or balance.used_days + request.requested_days > balance.allocated_days:
-                db.rollback()
-                raise HTTPException(status_code=409, detail="Insufficient leave balance")
-            balance.used_days += request.requested_days
-            db.add(
-                LeaveLedgerEntry(
-                    organization_id=organization_id,
-                    employee_id=employee.id,
-                    leave_type_id=leave_type.id,
-                    leave_request_id=request.id,
-                    entry_type="approved",
-                    days=request.requested_days,
+                    db.add(balance)
+                    db.flush()
+            except IntegrityError:
+                balance = db.scalar(
+                    select(LeaveBalance)
+                    .where(
+                        LeaveBalance.employee_id == employee.id,
+                        LeaveBalance.leave_type_id == leave_type.id,
+                        LeaveBalance.balance_year == year,
+                    )
+                    .with_for_update()
                 )
+        if balance is None or balance.used_days + request.requested_days > balance.allocated_days:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Insufficient leave balance")
+        balance.used_days += request.requested_days
+        db.add(
+            LeaveLedgerEntry(
+                organization_id=organization_id,
+                employee_id=employee.id,
+                leave_type_id=leave_type.id,
+                leave_request_id=request.id,
+                entry_type="approved",
+                days=request.requested_days,
             )
+        )
         request.status = "Approved"
         request.decision_reason = None
+        db.execute(
+            update(AttendanceRecord)
+            .where(
+                AttendanceRecord.organization_id == organization_id,
+                AttendanceRecord.employee_id == employee.id,
+                AttendanceRecord.attendance_date >= request.start_date,
+                AttendanceRecord.attendance_date <= request.end_date,
+                AttendanceRecord.status == "Absent",
+                AttendanceRecord.check_in.is_(None),
+            )
+            .values(status="On Leave")
+        )
     else:
         if not reason or not reason.strip():
             raise HTTPException(status_code=422, detail="A rejection reason is required")

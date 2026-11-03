@@ -39,9 +39,10 @@ Employee salaries are decimal values. Creating an employee creates an `employee`
 | `POST /me/attendance/check-in` | Employee self check-in; server timestamp and organization-local date | Empty JSON | Current record `{ id, date, checkIn, checkOut, status, workedHours }`; `checkIn` |
 | `POST /me/attendance/check-out` | Employee self check-out after check-in | Empty JSON | Updated attendance record; `checkOut` |
 | `POST /me/attendance/corrections` | Employee requests auditable check-in/out correction | `{ event: "check_in" \| "check_out", reason }` | Correction with original/requested values and pending status; creates an unread `ATTENDANCE_CORRECTION` notification for each active organization admin linking to `/attendance?correction={id}`; `resetCheckIn`, `resetCheckOut` |
-| `GET /attendance?date=&search=&status=&page=&page_size=` | Admin organization attendance list | Optional filters, pagination max 100 | `{ items, total, page, pageSize }`; `getAttendanceRecords` |
+| `GET /attendance?date=&employee_id=&search=&status=&page=&page_size=` | Admin organization attendance list; `employee_id` loads one employee's history | Optional filters, pagination max 100 | `{ items, total, page, pageSize }`; date defaults to organization-local today in the admin UI |
 | `GET /attendance/summary?date=` | Admin daily totals; omitted date means organization-local today | Optional ISO date | `{ date, present, late, absent, onLeave, unmarked, total, totalEmployees }`; `getAttendanceSummary` |
 | `GET /attendance/corrections?status=` | Admin review queue | Optional status | Correction list; `getCorrectionRequests` |
+| `POST /attendance/corrections/clear` | Admin archive resolved requests from the queue; records remain retained for audit | Empty JSON | `{ archivedCount }`; excludes only approved/rejected requests from future queue results |
 | `GET /attendance/corrections/{correctionId}` | Admin correction detail | UUID path | Correction detail; `getCorrectionRequestById` |
 | `POST /attendance/corrections/{correctionId}/approve` | Admin approve; preserves event history | `{ reviewReason }` | Updated correction and attendance; `approveCorrection` |
 | `POST /attendance/corrections/{correctionId}/reject` | Admin reject | `{ reviewReason }` | Updated correction; `rejectCorrection` |
@@ -61,15 +62,15 @@ Correction routes do not delete original events. Browser-supplied timestamps and
 | `GET /leaves/requests/{requestId}` | Admin request detail | UUID path | Request, employee, dates, decision data; `getLeaveRequestById` |
 | `POST /leaves/requests/{requestId}/approve` | Admin approval | Empty JSON | Updated request; balance and ledger update commit atomically; `approveLeave` |
 | `POST /leaves/requests/{requestId}/reject` | Admin rejection | `{ rejectionReason? }` | Updated request; `rejectLeave` |
-| `GET /leave-types` | Authenticated user | None | Active leave types; `getLeavePolicies` |
+| `GET /leave-types` | Authenticated user | None | Admins receive all types; employees receive active types only; `getLeavePolicies` |
 | `GET /leave-types/{typeId}` | Authenticated user | UUID path | Leave policy; `getLeavePolicyById` |
 | `POST /leave-types` | Admin create policy | `{ name, code, description, annualAllocation, paid, carryForward, maxConsecutiveDays }` | Created leave type; `createLeavePolicy` |
 | `PATCH /leave-types/{typeId}` | Admin edit policy | Partial policy fields | Updated type; `updateLeavePolicy` |
 | `PATCH /leave-types/{typeId}/status` | Admin activate/deactivate | `{ status: "Active" \| "Inactive" }` | Updated type; `updateLeavePolicyStatus` |
-| `GET /me/leaves` | Employee self requests and balance context | None | Own requests/balances; `getMyLeaves` |
-| `POST /me/leaves` | Employee self apply | `{ type, startDate, endDate, reason }` | Created pending request; `applyForLeave` |
+| `GET /me/leaves` | Employee self requests and balance context | None | Active types' allocations, used, pending, available days, and consecutive-day limits; `getMyLeaves` |
+| `POST /me/leaves` | Employee self apply | `{ type, startDate, endDate, reason }` | Created pending request only when its active type's annual allowance and consecutive-day limit allow it; pending days reserve allowance; `applyForLeave` |
 
-Pending requests do not consume balance. Approval checks overlap and updates the ledger exactly once. Leave-year boundaries, holiday counting, and carry-forward expiry remain unconfirmed policy decisions.
+Pending requests reserve allowance and are checked again at approval. Approval updates the leave balance and ledger exactly once. Leave-year boundaries, holiday counting, and carry-forward expiry remain unconfirmed policy decisions.
 
 ## Payroll, advances, and overtime
 
@@ -102,7 +103,7 @@ Historical payroll calculation is not finalized or silently recomputed. The `set
 |---|---|---|---|
 | `GET /dashboard/summary` | Admin dashboard | None; organization-local current day | `{ totalEmployees, presentToday, lateToday, onLeaveToday }`; `getDashboardStats` |
 | `GET /dashboard/recent-attendance` | Admin dashboard recent activity | None | Up to 10 recent attendance rows; `getRecentAttendance` |
-| `GET /dashboard/attendance-chart` | Admin current-week chart | None; Monday-Sunday in organization timezone | `{ weekStart, weekEnd, items: [{ date, day, present, late, leave, absent }] }`; absent is `null` on nonworking/incomplete days and derives from missing active-employee records only after a configured workday is complete; `getAttendanceChart` / `AttendanceOverview` |
+| `GET /dashboard/attendance-chart` | Admin current-week chart | None; Monday-Sunday in organization timezone | `{ weekStart, weekEnd, items: [{ date, day, present, late, leave, absent }] }`; absent is `null` on nonworking/pre-grace days and includes generated absence records after work start plus grace; `getAttendanceChart` / `AttendanceOverview` |
 | `GET /settings/organization` / `PATCH /settings/organization` | Admin organization profile | Full profile on patch: name, email, phone, address, IANA timezone, currency, date format | Saved profile; `getOrganizationSettings`, `updateOrganizationSettings` |
 | `POST /settings/company-code` | Admin generates/rotates company enrollment code | None | `{ companyCode }`; plaintext is returned once and the previous code is invalidated; `generateCompanyCode` |
 | `GET /settings/attendance-policy` / `PUT /settings/attendance-policy` | Admin attendance policy | Work start/end, grace/late thresholds, working hours/days, early checkout and overtime switches | Saved policy; `getAttendancePolicy`, `updateAttendancePolicy` |

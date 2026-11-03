@@ -1,4 +1,5 @@
-import { CheckCircle2, Clock3, Eye, XCircle } from "lucide-react";
+import { Archive, CheckCircle2, Clock3, Eye, XCircle } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -6,7 +7,11 @@ function AttendanceCorrectionTable({
   requests,
   loading,
   onReview,
+  onClearResolved,
 }) {
+  const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState("");
+
   if (loading) {
     return (
       <div className="rounded-2xl border bg-background/80 p-6 shadow-sm">
@@ -18,6 +23,31 @@ function AttendanceCorrectionTable({
         </div>
       </div>
     );
+  }
+
+  const resolvedCount = requests.filter(
+    (request) => request.status !== "Pending",
+  ).length;
+
+  async function handleClearResolved() {
+    if (
+      !resolvedCount ||
+      !window.confirm(
+        `Hide ${resolvedCount} resolved correction request(s) from this list? Records will be retained for audit.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setClearing(true);
+      setClearError("");
+      await onClearResolved();
+    } catch (error) {
+      setClearError(error.message || "Unable to clear resolved requests.");
+    } finally {
+      setClearing(false);
+    }
   }
 
   return (
@@ -32,15 +62,35 @@ function AttendanceCorrectionTable({
           </div>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            Review employee requests to change attendance records.
+            Review employee requests to change attendance records. Clearing
+            hides resolved requests but retains them for audit.
           </p>
         </div>
 
-        <span className="w-fit rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-400">
-          {requests.filter((request) => request.status === "Pending").length}{" "}
-          pending
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="w-fit rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+            {requests.filter((request) => request.status === "Pending").length}{" "}
+            pending
+          </span>
+          {resolvedCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={clearing}
+              onClick={handleClearResolved}
+            >
+              <Archive className="size-3.5" />
+              {clearing ? "Clearing..." : "Clear records"}
+            </Button>
+          )}
+        </div>
       </div>
+
+      {clearError && (
+        <p role="alert" className="border-b px-5 py-3 text-sm text-destructive">
+          {clearError}
+        </p>
+      )}
 
       {requests.length === 0 ? (
         <div className="px-5 py-12 text-center">

@@ -1,4 +1,4 @@
-from datetime import date, time, timedelta
+from datetime import date, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -7,20 +7,25 @@ from sqlalchemy.orm import Session
 from app.models.attendance import AttendanceRecord
 from app.models.employee import Employee
 from app.models.leave import LeaveRequest
-from app.services.attendance import attendance_context
+from app.services.attendance import (
+    attendance_context,
+    attendance_grace_deadline,
+    mark_absences_for_organization,
+)
 
 
 def attendance_chart(db: Session, organization_id: UUID) -> dict:
     local_now, policy = attendance_context(db, organization_id)
+    mark_absences_for_organization(db, organization_id, local_now)
     today = local_now.date()
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
-    active_employees = db.scalar(
-        select(func.count(Employee.id)).where(
+    employee_joining_dates = db.scalars(
+        select(Employee.joining_date).where(
             Employee.organization_id == organization_id,
             Employee.status == "Active",
         )
-    ) or 0
+    ).all()
     attendance_rows = db.execute(
         select(
             AttendanceRecord.attendance_date,
@@ -60,26 +65,31 @@ def attendance_chart(db: Session, organization_id: UUID) -> dict:
             current += timedelta(days=1)
 
     working_days = set(policy.get("workingDays", []))
-    work_end_time = policy.get("workEndTime")
-    scheduled_end = time.fromisoformat(work_end_time) if work_end_time else None
     items = []
     for offset in range(7):
         attendance_date = week_start + timedelta(days=offset)
         records = attendance_by_date.get(attendance_date, [])
         employees_with_records = {employee_id for employee_id, _ in records}
         employees_on_leave = leave_by_date.get(attendance_date, set())
-        day_is_working = attendance_date.strftime("%A") in working_days
-        workday_complete = attendance_date < today or (
-            attendance_date == today
-            and scheduled_end is not None
-            and local_now.time() >= scheduled_end
+        day_active_employees = sum(
+            joining_date <= attendance_date for joining_date in employee_joining_dates
         )
+        day_is_working = attendance_date.strftime("%A") in working_days
+        workday_complete = attendance_date < today
+        if attendance_date == today and attendance_date.strftime("%A") in working_days:
+            grace_deadline = attendance_grace_deadline(local_now, policy)
+            workday_complete = (
+                grace_deadline is not None and local_now > grace_deadline
+            )
         absent = None
         if day_is_working and workday_complete:
-            absent = max(
+            recorded_absent = sum(status == "Absent" for _, status in records)
+            unmarked_absent = max(
                 0,
-                active_employees - len(employees_with_records | employees_on_leave),
+                day_active_employees
+                - len(employees_with_records | employees_on_leave),
             )
+            absent = recorded_absent + unmarked_absent
         items.append(
             {
                 "date": attendance_date,

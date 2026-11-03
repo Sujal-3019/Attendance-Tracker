@@ -87,7 +87,9 @@ def get_leave_types(
     user: AuthenticatedUser,
     db: Annotated[Session, Depends(get_db)],
 ) -> list[dict]:
-    return leave_service.list_types(db, user.organization_id)
+    return leave_service.list_types(
+        db, user.organization_id, include_inactive=user.role == "admin"
+    )
 
 
 @router.get("/leave-types/{type_id}")

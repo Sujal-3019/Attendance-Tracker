@@ -424,9 +424,15 @@ function EmployeeAttendancePage() {
                 <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium">
                   {hasCheckedOut
                     ? "Completed"
-                    : hasCheckedIn
-                      ? "Checked in"
-                      : "Not started"}
+                    : today?.status === "Absent"
+                      ? "Absent"
+                      : today?.status === "On Leave"
+                        ? "On leave"
+                        : today?.status === "Late"
+                          ? "Late"
+                          : hasCheckedIn
+                            ? "Checked in"
+                            : "Not started"}
                 </span>
               </div>
 
@@ -466,9 +472,8 @@ function EmployeeAttendancePage() {
             <div className="mt-6 rounded-xl bg-muted/50 p-4">
               <p className="text-sm font-medium">Attendance reminder</p>
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Remember to check out before leaving. Office location,
-                working schedules, late arrival rules, and remote-work
-                policies will be applied when backend validation is added.
+                Your configured work schedule and grace period determine
+                whether today is Present, Late, or Absent.
               </p>
             </div>
           </article>
