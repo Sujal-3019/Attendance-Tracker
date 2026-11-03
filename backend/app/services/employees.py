@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -11,8 +12,49 @@ from app.models.employee import Employee
 from app.models.attendance import AttendanceRecord
 from app.models.leave import LeaveBalance, LeaveRequest, LeaveType
 from app.models.payroll import Notification
+from app.models.organization import WorkLocation
 from app.models.user import User
 from app.schemas.employee import EmployeeCreate, EmployeeLeaveAllocation, EmployeeUpdate
+
+
+def _validate_work_configuration(
+    db: Session,
+    organization_id: UUID,
+    work_mode: str,
+    location: str | None,
+    hybrid_office_days: list[str] | None,
+    allow_existing_location: bool = False,
+) -> None:
+    office_days = hybrid_office_days or []
+    if work_mode == "Remote":
+        if location != "Remote" or office_days:
+            raise HTTPException(
+                status_code=422,
+                detail="Remote employees must use the Remote location and have no office-day schedule.",
+            )
+        return
+    if work_mode == "Hybrid" and not 1 <= len(office_days) <= 6:
+        raise HTTPException(
+            status_code=422,
+            detail="Hybrid employees need at least one office day and one remote day.",
+        )
+    if work_mode == "Office" and office_days:
+        raise HTTPException(
+            status_code=422,
+            detail="Office-day schedules are only available for Hybrid employees.",
+        )
+    location_query = select(WorkLocation.id).where(
+        WorkLocation.organization_id == organization_id,
+        WorkLocation.name == location,
+    )
+    if not allow_existing_location:
+        location_query = location_query.where(WorkLocation.is_active.is_(True))
+    office_exists = db.scalar(location_query)
+    if not office_exists:
+        raise HTTPException(
+            status_code=422,
+            detail="Select an active office location configured by the administrator.",
+        )
 
 
 def _public_values(employee: Employee) -> dict:
@@ -28,11 +70,16 @@ def _public_values(employee: Employee) -> dict:
         "employmentType": employee.employment_type,
         "workMode": employee.work_mode,
         "location": employee.work_location,
+        "hybridOfficeDays": employee.hybrid_office_days or [],
         "joiningDate": employee.joining_date,
         "status": employee.status,
         "profileComplete": employee.profile_complete,
         "wageModel": employee.wage_model,
         "baseWage": employee.base_wage,
+        "basicSalary": employee.basic_salary,
+        "dearnessAllowance": employee.dearness_allowance,
+        "houseRentAllowance": employee.house_rent_allowance,
+        "otherAllowances": employee.other_allowances,
     }
 
 
@@ -128,6 +175,26 @@ def _profile_is_complete(db: Session, employee: Employee) -> bool:
         ).all()
     )
     return active_leave_type_ids.issubset(balance_type_ids)
+
+
+def _validate_salary_components(employee: Employee) -> None:
+    components = (
+        employee.basic_salary,
+        employee.dearness_allowance,
+        employee.house_rent_allowance,
+        employee.other_allowances,
+    )
+    if any(value is not None for value in components):
+        if any(value is None for value in components):
+            raise HTTPException(
+                status_code=422,
+                detail="Enter all salary components or leave all of them blank",
+            )
+        if sum(components, Decimal("0")) != employee.base_wage:
+            raise HTTPException(
+                status_code=422,
+                detail="Salary components must equal the employee's base wage",
+            )
 
 
 def list_employees(
@@ -301,12 +368,19 @@ def create_employee(db: Session, organization_id: UUID, payload: EmployeeCreate)
         employment_type=payload.employment_type,
         work_mode=payload.work_mode,
         work_location=payload.location,
+        hybrid_office_days=payload.hybrid_office_days,
         joining_date=payload.joining_date,
         status=payload.status,
         profile_complete=False,
         wage_model=payload.wage_model,
         base_wage=payload.base_wage,
+        basic_salary=payload.basic_salary,
+        dearness_allowance=payload.dearness_allowance,
+        house_rent_allowance=payload.house_rent_allowance,
+        other_allowances=payload.other_allowances,
     )
+    _validate_work_configuration(db, organization_id, employee.work_mode, employee.work_location, employee.hybrid_office_days)
+    _validate_salary_components(employee)
     db.add(employee)
     try:
         db.flush()
@@ -347,6 +421,25 @@ def update_employee(
         setattr(employee, attribute, value)
         if employee.user is not None and attribute in {"email", "phone"}:
             setattr(employee.user, attribute, value)
+    if (
+        employee.work_mode == "Hybrid"
+        and "hybrid_office_days" not in updates
+        and not employee.hybrid_office_days
+    ):
+        employee.hybrid_office_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    elif employee.work_mode != "Hybrid":
+        employee.hybrid_office_days = []
+    _validate_work_configuration(
+        db,
+        organization_id,
+        employee.work_mode,
+        employee.work_location,
+        employee.hybrid_office_days,
+        allow_existing_location=(
+            employee.work_location == payload.location
+            and employee.work_mode == payload.work_mode
+        ),
+    )
     if employee.email:
         employee.email = str(employee.email).lower()
         if employee.user is not None:
@@ -355,6 +448,7 @@ def update_employee(
         _apply_leave_allocations(
             db, organization_id, employee, payload.leave_allocations
         )
+    _validate_salary_components(employee)
     employee.profile_complete = _profile_is_complete(db, employee)
     if employee.profile_complete:
         db.query(Notification).filter(

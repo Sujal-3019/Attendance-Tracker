@@ -101,7 +101,7 @@ function PayrollHeader({
 
           <Button onClick={onRunPayroll}>
             <Play className="size-4" />
-            Run payroll
+            Calculate payroll
           </Button>
         </div>
       </div>

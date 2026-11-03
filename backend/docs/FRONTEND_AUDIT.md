@@ -66,7 +66,7 @@ Every service below is presently fixture-backed. Request fields follow current f
 | `getForgotCheckoutRecords()`, `getForgotCheckoutRecordById(id)` | `GET /api/v1/attendance/forgot-checkout[/{id}]` | outstanding/closed requests |
 | `resolveForgotCheckout(id, data)` | `POST /api/v1/attendance/forgot-checkout/{id}/resolve` | updated request and audited check-out |
 | `getMyAttendance()` | `GET /api/v1/me/attendance` | `{ today, history, summary }` |
-| `checkIn()`, `checkOut()` | `POST /api/v1/me/attendance/check-in|check-out` | current attendance record |
+| `checkIn()`, `checkOut()` | `POST /api/v1/me/attendance/check-in|check-out` | Office-mode and scheduled Hybrid office-day check-ins obtain precise browser coordinates and send `{ latitude, longitude, accuracy }`; the server requires the accuracy circle inside an active office geofence. Remote employees and Hybrid remote days send an empty JSON object. |
 | `resetCheckIn()`, `resetCheckOut()` | `POST /api/v1/me/attendance/corrections` `{ event, reason }` | correction request; never erase event history |
 | `getLeaveRequests()` | `GET /api/v1/leaves/requests` filters/page | leave request items |
 | `getLeaveStats()` | `GET /api/v1/leaves/summary` | pending/approved/rejected totals |
@@ -76,20 +76,21 @@ Every service below is presently fixture-backed. Request fields follow current f
 | `getLeavePolicies()`, `getLeavePolicyById(id)` | `GET /api/v1/leave-types[/{id}]` | policy/type details |
 | `createLeavePolicy(data)`, `updateLeavePolicy(id, data)`, `updateLeavePolicyStatus(id, status)` | `POST/PATCH /api/v1/leave-types[/{id}]` | saved type |
 | `getMyLeaves()`, `applyForLeave(payload)` | `GET/POST /api/v1/me/leaves` | own requests / created request |
-| `getPayrollEmployees(month, year)` | `GET /api/v1/payroll/runs/{year}-{month}/employees` | employee payroll rows/status |
+| `getPayrollEmployees(month, year)` | `GET /api/v1/payroll/employees?month=&year=` | payroll estimates or finalized snapshots |
 | `getEmployeePayroll(id, month, year)` | `GET /api/v1/payroll/employees/{id}?month=&year=` | payroll detail and line items |
 | `getPayrollSummary(month, year)` | `GET /api/v1/payroll/summary?month=&year=` | totals and row counts |
-| `finalizePayroll(id, month, year)` | `POST /api/v1/payroll/employees/{id}/finalize` | immutable finalized snapshot |
-| `getMyPayroll()`, `getMyPayslip(id)`, `getMySalaryProjection()` | `GET /api/v1/me/payroll[/{id}|/projection]` | own payroll history/payslip/projection |
+| `finalizePayroll(id, month, year)` | `POST /api/v1/payroll/employees/{id}/finalize?month=&year=` | immutable payroll estimate snapshot for a closed period |
+| `getMyPayroll()`, `getMyPayslip(id)`, `getMySalaryProjection()` | `GET /api/v1/me/payroll[/{id}|/projection]` | own finalized estimates and assigned salary |
+| `updateMyTaxRegime(regime)` | `PATCH /api/v1/me/payroll/tax-regime` `{ taxRegime: "old" \| "new" }` | saved employee preference; does not calculate TDS |
 | `getSalaryAdvances()`, `getEmployeeSalaryAdvances(id)` | `GET /api/v1/advances[?employee_id=]` | advance, repayment, outstanding values |
 | `createSalaryAdvance(payload)` | `POST /api/v1/advances` | created request/advance; approval semantics to confirm |
-| `recordAdvanceRepayment(id, payload)`, `settleSalaryAdvance(id)`, `updateAdvanceRepaymentRule(...)`, `settlePayrollAdvanceDeductions(...)` | `POST/PATCH /api/v1/advances/{id}/repayments|settle|repayment-rule` and payroll close operation | transaction history and remaining balance |
+| `recordAdvanceRepayment(id, payload)`, `settleSalaryAdvance(id)`, `updateAdvanceRepaymentRule(...)` | `POST/PATCH /api/v1/advances/{id}/repayments|settle|repayment-rule` | transaction history and remaining balance; payroll installments are created atomically during finalization |
 | `getOvertimeRequests()`, `getOvertimeRequestById(id)` | `GET /api/v1/overtime/requests[/{id}]` | request details |
 | `approveOvertime(id, ...)`, `rejectOvertime(id, ...)` | `POST /api/v1/overtime/requests/{id}/approve|reject` | updated request with reviewer |
 | `getOrganizationSettings()`, `updateOrganizationSettings(data)` | `GET/PATCH /api/v1/settings/organization` | organization settings |
 | `getAttendancePolicy()`, `updateAttendancePolicy(data)` | `GET/PATCH /api/v1/settings/attendance-policy` | policy settings |
 | `getWorkLocations()`, `createWorkLocation(data)`, `updateWorkLocation(id, data)`, `updateWorkLocationStatus(id, status)` | `GET/POST/PATCH /api/v1/settings/work-locations[/{id}]` | location records; coordinate values restricted |
-| `getPayrollSettings()`, `updatePayrollSettings(data)` | `GET/PATCH /api/v1/settings/payroll-policy` | configurable policy |
+| `getPayrollSettings()`, `updatePayrollSettings(data)` | `GET/PUT /api/v1/settings/payroll-policy` | default wage model and amount |
 | `getDashboardStats()`, `getRecentAttendance()` | `GET /api/v1/dashboard/summary`, `/api/v1/dashboard/recent-attendance` | database-derived summary/chart points and latest entries |
 | `getNotifications()`, `getUnreadNotificationCount()`, `markNotificationAsRead(id)`, `markAllNotificationsAsRead()` | `GET /api/v1/notifications`, `/unread-count`, `PATCH /{id}/read`, `/read-all` | scoped notification(s)/count |
 | `getMyProfile()`, `updateMyProfile(updates)` | `GET/PATCH /api/v1/me/profile` | authenticated employee profile; restricted editable fields |
@@ -99,7 +100,7 @@ Every service below is presently fixture-backed. Request fields follow current f
 - Every service listed above currently keeps fixtures in module-level arrays/objects, uses artificial delays, and mutates in-memory values. Reloading loses updates; server-side authorization and persistence do not exist.
 - Demo employee IDs/codes, names, salary/attendance/leave histories, organizations, notifications, corrections, forgotten checkouts, overtime, and balances are embedded in those fixtures. These must not be migrated as production seed data.
 - Auth fixtures explicitly accept `password123`, `admin@a.com`, `employee@a.com`, and enrollment code `ATTENDLY01`; none is a real credential or valid production policy.
-- Payroll service computes mock results based on attendance and configured settings; policy defaults are sample values and need review before actual payroll use.
+- Payroll calculations use configured working days, wage model, attendance, paid/unpaid approved leave, approved overtime, and capped advance installments. Income-tax TDS, EPF, ESI, and professional tax remain explicitly uncalculated pending verified rates and employer/employee statutory inputs; payroll results are estimates, not official payslips.
 - Attendance page includes employee-level correction and forgotten checkout actions; employee reset actions are implemented as direct mock state mutations, not auditable requests.
 - Theme preference is local storage only. Auth and role state are memory-only.
 - API utility has a localhost default, but service modules do not use it; API errors are reduced to messages and there is no token handling.
@@ -151,11 +152,11 @@ Feature mapping status at audit time: all listed screens and workflows exist in 
 - **Employees:** organization-scoped employee list/details/create/update/status and self profile read/update endpoints are implemented. Admin employee creation atomically provisions the linked employee login account with an Argon2-hashed initial password; profile email/name/phone/status edits keep the login identity and activation state synchronized.
 - **Attendance:** employee check-in/out and history, server-side event timestamps, configured organization-local date and late/grace calculation, admin filtering/summary, auditable correction review, and forgotten-checkout resolution are implemented. Unknown work schedules, location verification, and unsupported absence rules remain explicit limitations.
 - **Leave:** type/policy management, employee application and own history, admin request review/statistics/balances, overlap checks, and transactional, ledger-backed approval are implemented. Leave-year/holiday/carry-forward decisions remain open.
-- **Payroll and finance:** decimal salary-advance records and idempotent repayment/settlement, payroll snapshot read paths, and overtime review are implemented. Payroll finalization and salary projection calculations are explicitly blocked pending policy confirmation; payroll-linked advance deduction settlement is not implemented.
+- **Payroll and finance:** monthly/daily/hourly estimates, scheduled-day proration, paid/unpaid leave and absence treatment, approved overtime at 1.5×, capped idempotent advance installments, closed-period snapshot finalization, employee salary visibility, tax-regime preference, and CSV export/download are implemented. TDS, EPF, ESI, and professional tax remain uncalculated pending verified rates and employer/employee statutory configuration.
 - **Settings, dashboard, and notifications:** organization/attendance/payroll settings, work locations, organization-local dashboard summary, database-backed current-week attendance chart, recent attendance, and user-scoped notification endpoints are implemented. Sample dashboard trend percentages were removed.
 - **Frontend integration:** feature services use the shared HTTP helper and API contracts; simulated login/admin registration and fixture-backed feature service behavior were removed. Access tokens remain memory-only. Some unsupported payroll actions fail explicitly rather than returning mock success.
 - **Verification:** 12 isolated pytest cases pass; frontend production build and Oxlint complete successfully; Alembic reports no model/schema drift. Before migration, the configured database was verified read-only and contained only an empty `alembic_version` table. The additive initial migration is now applied at revision `4ab385a0c838`; no existing application tables or data were replaced. `/health` and `/health/db` both return 200 against the configured database. Build chunk-size, linter, and Starlette/httpx deprecation warnings are non-fatal.
-- **Remaining business decisions:** confirmed payroll formula/legal rules; shift and overnight handling; leave year/holiday/carry-forward policies; employee enrollment-code lifecycle and email verification; advance approval/repayment policy; and deployment-grade token revocation and operational monitoring.
+- **Remaining business decisions:** verified FY 2026–27 TDS schedule and required employee declarations; EPF/ESI coverage and component bases; state-specific professional-tax schedule; holiday calendars, partial-day leave, shift/overnight handling, employee enrollment-code lifecycle and email verification, and deployment-grade token revocation/monitoring.
 
 ### Employee self-registration and onboarding update (November 2026)
 

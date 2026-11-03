@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import select
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.auth_deps import get_current_user, require_roles
 from app.api.deps import get_db
 from app.models.employee import Employee
+from app.models.organization import OrganizationSettings
 from app.models.payroll import SalaryAdvance
 from app.models.user import User
 from app.schemas.payroll import (
@@ -16,6 +18,7 @@ from app.schemas.payroll import (
     AdvanceRepaymentRule,
     OvertimeDecision,
     SalaryAdvanceCreate,
+    TaxRegimeUpdate,
 )
 from app.services import payroll as payroll_service
 
@@ -25,8 +28,22 @@ AdminUser = Annotated[User, Depends(require_roles("admin"))]
 AuthenticatedUser = Annotated[User, Depends(get_current_user)]
 
 
-def selected_period(month: int | None, year: int | None) -> str:
+def selected_period(
+    month: int | None,
+    year: int | None,
+    db: Session,
+    organization_id: UUID,
+) -> str:
     now = datetime.now(UTC)
+    settings = db.scalar(
+        select(OrganizationSettings).where(
+            OrganizationSettings.organization_id == organization_id
+        )
+    )
+    timezone = ZoneInfo(
+        (settings.organization_profile if settings else {}).get("timezone", "UTC")
+    )
+    now = now.astimezone(timezone)
     selected_month = month or now.month
     selected_year = year or now.year
     return f"{selected_year:04d}-{selected_month:02d}"
@@ -40,7 +57,7 @@ def get_payroll_employees(
     year: int | None = Query(None, ge=2020, le=2100),
 ) -> dict:
     return payroll_service.payroll_overview(
-        db, user.organization_id, selected_period(month, year)
+        db, user.organization_id, selected_period(month, year, db, user.organization_id)
     )
 
 
@@ -52,7 +69,7 @@ def get_payroll_summary(
     year: int | None = Query(None, ge=2020, le=2100),
 ) -> dict:
     return payroll_service.payroll_summary(
-        db, user.organization_id, selected_period(month, year)
+        db, user.organization_id, selected_period(month, year, db, user.organization_id)
     )
 
 
@@ -65,7 +82,7 @@ def get_employee_payroll(
     year: int | None = Query(None, ge=2020, le=2100),
 ) -> dict:
     overview = payroll_service.payroll_overview(
-        db, user.organization_id, selected_period(month, year)
+        db, user.organization_id, selected_period(month, year, db, user.organization_id)
     )
     item = next((row for row in overview["items"] if row["employeeId"] == employee_id), None)
     if item is None:
@@ -80,16 +97,14 @@ def finalize_payroll(
     db: Annotated[Session, Depends(get_db)],
     month: int | None = Query(None, ge=1, le=12),
     year: int | None = Query(None, ge=2020, le=2100),
-) -> None:
-    employee = db.scalar(
-        select(Employee).where(
-            Employee.id == employee_id,
-            Employee.organization_id == user.organization_id,
-        )
+) -> dict:
+    return payroll_service.finalize_payroll(
+        db,
+        user.organization_id,
+        employee_id,
+        selected_period(month, year, db, user.organization_id),
+        user,
     )
-    if employee is None:
-        raise HTTPException(status_code=404, detail="Employee not found")
-    payroll_service.finalize_payroll_not_ready()
 
 
 @router.get("/me/payroll")
@@ -114,11 +129,28 @@ def get_my_salary_projection(
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee profile not found")
     return {
-        "available": False,
-        "reason": "Projection requires confirmed payroll policies and attendance data.",
+        "available": employee.base_wage > 0,
+        "reason": None if employee.base_wage > 0 else "Your salary has not been set by an administrator yet.",
         "wageModel": employee.wage_model,
         "baseWage": employee.base_wage,
+        "salaryComponents": {
+            "basicSalary": employee.basic_salary,
+            "dearnessAllowance": employee.dearness_allowance,
+            "houseRentAllowance": employee.house_rent_allowance,
+            "otherAllowances": employee.other_allowances,
+        },
+        "taxRegime": employee.tax_regime,
+        "statutoryTaxesCalculated": False,
     }
+
+
+@router.patch("/me/payroll/tax-regime")
+def update_my_tax_regime(
+    payload: TaxRegimeUpdate,
+    user: AuthenticatedUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return payroll_service.update_tax_regime(db, user, payload.tax_regime)
 
 
 @router.get("/me/payroll/{payslip_id}")

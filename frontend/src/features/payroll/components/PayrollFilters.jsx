@@ -24,8 +24,10 @@ const wageModels = [
 
 const payrollStatuses = [
   "All",
-  "Ready",
+  "Estimate",
+  "Period Open",
   "Needs Review",
+  "Finalized",
 ];
 
 function PayrollFilters({

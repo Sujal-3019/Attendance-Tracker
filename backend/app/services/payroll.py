@@ -1,14 +1,24 @@
-from datetime import UTC, date, datetime
-from decimal import Decimal
+import calendar
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.models.attendance import AttendanceRecord
 from app.models.employee import Employee
-from app.models.payroll import AdvanceRepayment, PayrollSnapshot, SalaryAdvance
+from app.models.leave import LeaveRequest, LeaveType
+from app.models.organization import Organization, OrganizationSettings
+from app.models.payroll import (
+    AdvanceRepayment,
+    OvertimeRequest,
+    PayrollSnapshot,
+    SalaryAdvance,
+)
 from app.models.user import User
 from app.schemas.payroll import (
     AdvanceRepaymentCreate,
@@ -253,6 +263,303 @@ def update_repayment_rule(
     return {**_advance_values(advance, employee, totals), "repayments": _advance_repayments(db, advance_id)}
 
 
+CENT = Decimal("0.01")
+OT_MULTIPLIER = Decimal("1.5")
+
+
+def _money(value: Decimal) -> Decimal:
+    return value.quantize(CENT, rounding=ROUND_HALF_UP)
+
+
+def _money_json(value: Decimal | None) -> float | None:
+    return float(_money(value)) if value is not None else None
+
+
+def _payroll_context(db: Session, organization_id: UUID) -> tuple[dict, date, dict]:
+    settings = db.scalar(
+        select(OrganizationSettings).where(
+            OrganizationSettings.organization_id == organization_id
+        )
+    )
+    attendance_policy = settings.attendance_policy if settings else {}
+    profile = settings.organization_profile if settings else {}
+    if not attendance_policy.get("workingDays"):
+        raise HTTPException(
+            status_code=409,
+            detail="Configure the organization's working days before calculating payroll.",
+        )
+    timezone = ZoneInfo(profile.get("timezone", "UTC"))
+    organization = db.get(Organization, organization_id)
+    if organization is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    return (
+        attendance_policy,
+        datetime.now(UTC).astimezone(timezone).date(),
+        {"country": organization.country, "state": organization.state},
+    )
+
+
+def _scheduled_days(start: date, end: date, weekdays: set[int]) -> list[date]:
+    if end < start:
+        return []
+    return [
+        start + timedelta(days=offset)
+        for offset in range((end - start).days + 1)
+        if (start + timedelta(days=offset)).weekday() in weekdays
+    ]
+
+
+def _advance_installments(
+    db: Session, employee_id: UUID, period: str, available_net: Decimal
+) -> list[tuple[SalaryAdvance, Decimal]]:
+    period_start = _period_date(period)
+    advances = db.scalars(
+        select(SalaryAdvance)
+        .where(
+            SalaryAdvance.employee_id == employee_id,
+            SalaryAdvance.status == "Active",
+            SalaryAdvance.start_month <= period_start,
+        )
+        .order_by(SalaryAdvance.created_at, SalaryAdvance.id)
+    ).all()
+    totals = _repayment_totals(db, [advance.id for advance in advances])
+    remaining_pay = max(Decimal("0"), available_net)
+    deductions: list[tuple[SalaryAdvance, Decimal]] = []
+    for advance in advances:
+        paid = totals.get(advance.id, {}).get("total", Decimal("0"))
+        outstanding = max(Decimal("0"), advance.original_amount - paid)
+        amount = min(advance.monthly_deduction, outstanding, remaining_pay)
+        if amount > 0:
+            deductions.append((advance, _money(amount)))
+            remaining_pay -= amount
+    return deductions
+
+
+def _calculate_employee_period(
+    db: Session, organization_id: UUID, employee: Employee, period: str
+) -> dict:
+    period_start = _period_date(period)
+    year, month = period_start.year, period_start.month
+    period_end = date(year, month, calendar.monthrange(year, month)[1])
+    attendance_policy, local_today, jurisdiction = _payroll_context(db, organization_id)
+    working_day_names = attendance_policy["workingDays"]
+    weekdays = {
+        index
+        for index, name in enumerate(
+            ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+        )
+        if name in working_day_names
+    }
+    if not weekdays:
+        raise HTTPException(status_code=409, detail="At least one working day is required.")
+
+    month_days = _scheduled_days(period_start, period_end, weekdays)
+    employed_month_days = [day for day in month_days if day >= employee.joining_date]
+    elapsed_end = min(period_end, local_today)
+    period_days = [
+        day
+        for day in employed_month_days
+        if day <= elapsed_end
+    ]
+    period_is_closed = period_end <= local_today
+    min_hours = Decimal(str(attendance_policy.get("minimumWorkingHours", 0)))
+
+    attendance = db.scalars(
+        select(AttendanceRecord).where(
+            AttendanceRecord.organization_id == organization_id,
+            AttendanceRecord.employee_id == employee.id,
+            AttendanceRecord.attendance_date >= period_start,
+            AttendanceRecord.attendance_date <= period_end,
+        )
+    ).all()
+    attendance_by_day = {item.attendance_date: item for item in attendance}
+    worked_days = {
+        day
+        for day in period_days
+        if (record := attendance_by_day.get(day)) is not None
+        and record.status in {"Present", "Late", "Correction"}
+    }
+    missing_hours = [
+        day
+        for day in worked_days
+        if attendance_by_day[day].worked_hours is None
+    ]
+
+    leave_rows = db.execute(
+        select(LeaveRequest, LeaveType)
+        .join(LeaveType, LeaveType.id == LeaveRequest.leave_type_id)
+        .where(
+            LeaveRequest.organization_id == organization_id,
+            LeaveRequest.employee_id == employee.id,
+            LeaveRequest.status == "Approved",
+            LeaveRequest.start_date <= period_end,
+            LeaveRequest.end_date >= period_start,
+        )
+    ).all()
+    leave_paid_by_day: dict[date, bool] = {}
+    for request, leave_type in leave_rows:
+        leave_start = max(request.start_date, period_start, employee.joining_date)
+        leave_end = min(request.end_date, period_end, elapsed_end)
+        for leave_day in _scheduled_days(leave_start, leave_end, weekdays):
+            if leave_day not in worked_days:
+                leave_paid_by_day[leave_day] = (
+                    leave_paid_by_day.get(leave_day, True) and leave_type.paid
+                )
+
+    paid_leave_days = {
+        day for day, is_paid in leave_paid_by_day.items() if is_paid
+    }
+    unpaid_leave_days = {
+        day for day, is_paid in leave_paid_by_day.items() if not is_paid
+    }
+    absent_days = set(period_days) - worked_days - set(leave_paid_by_day)
+    open_attendance = [
+        item
+        for item in attendance
+        if item.attendance_date in period_days
+        and item.check_in is not None
+        and item.check_out is None
+        and item.status in {"Present", "Late", "Correction"}
+    ]
+
+    base_wage = Decimal(employee.base_wage or 0)
+    full_month_days = len(month_days)
+    employed_days = len(employed_month_days)
+    daily_rate = base_wage / full_month_days if full_month_days else Decimal("0")
+    if employee.wage_model == "Monthly":
+        base_pay = base_wage * employed_days / full_month_days if full_month_days else Decimal("0")
+        absence_deduction = daily_rate * len(absent_days)
+        unpaid_leave_deduction = daily_rate * len(unpaid_leave_days)
+        hourly_rate = (
+            base_wage / full_month_days / min_hours
+            if full_month_days and min_hours > 0
+            else Decimal("0")
+        )
+    elif employee.wage_model == "Daily":
+        base_pay = base_wage * (len(worked_days) + len(paid_leave_days))
+        absence_deduction = Decimal("0")
+        unpaid_leave_deduction = Decimal("0")
+        hourly_rate = base_wage / min_hours if min_hours > 0 else Decimal("0")
+    else:
+        worked_hours = sum(
+            (
+                Decimal(record.worked_hours or 0)
+                for day, record in attendance_by_day.items()
+                if day in worked_days
+            ),
+            Decimal("0"),
+        )
+        base_pay = base_wage * (worked_hours + min_hours * len(paid_leave_days))
+        absence_deduction = Decimal("0")
+        unpaid_leave_deduction = Decimal("0")
+        hourly_rate = base_wage
+
+    overtime_rows = db.scalars(
+        select(OvertimeRequest).where(
+            OvertimeRequest.organization_id == organization_id,
+            OvertimeRequest.employee_id == employee.id,
+            OvertimeRequest.attendance_date >= period_start,
+            OvertimeRequest.attendance_date <= period_end,
+            OvertimeRequest.status == "Approved",
+        )
+    ).all()
+    overtime_hours = sum((Decimal(item.hours) for item in overtime_rows), Decimal("0"))
+    overtime_pay = overtime_hours * hourly_rate * OT_MULTIPLIER
+    gross = _money(base_pay + overtime_pay)
+    attendance_deductions = _money(absence_deduction + unpaid_leave_deduction)
+    advances = _advance_installments(
+        db, employee.id, period, max(Decimal("0"), gross - attendance_deductions)
+    )
+    advance_deduction = _money(sum((amount for _, amount in advances), Decimal("0")))
+    deductions = _money(attendance_deductions + advance_deduction)
+    net = _money(max(Decimal("0"), gross - deductions))
+    warnings = []
+    if employee.joining_date > period_end:
+        warnings.append("Employee had not joined during the selected payroll period.")
+    if base_wage <= 0:
+        warnings.append("Salary has not been configured.")
+    if open_attendance:
+        warnings.append("Resolve open attendance check-outs before finalizing payroll.")
+    if employee.wage_model == "Hourly" and missing_hours:
+        warnings.append("Resolve attendance records with missing worked hours before finalizing hourly payroll.")
+    if employee.wage_model == "Hourly" and min_hours <= 0:
+        warnings.append("Configure minimum working hours before calculating hourly pay.")
+    if overtime_hours > 0 and min_hours <= 0 and employee.wage_model != "Hourly":
+        warnings.append("Configure minimum working hours before calculating overtime pay.")
+
+    statutory = {
+        "incomeTaxTds": None,
+        "epf": None,
+        "esi": None,
+        "professionalTax": None,
+        "status": "Not calculated",
+        "reason": "FY 2026-27 TDS rates and employer statutory coverage have not been verified/configured.",
+        **jurisdiction,
+    }
+    return {
+        "employeeId": employee.id,
+        "employeeCode": employee.employee_code,
+        "name": employee.full_name,
+        "department": employee.department,
+        "wageModel": employee.wage_model,
+        "baseWage": employee.base_wage,
+        "payrollMonth": period,
+        "payrollStatus": "Period Open" if not period_is_closed else ("Needs Review" if warnings else "Estimate"),
+        "periodOpen": not period_is_closed,
+        "canFinalize": period_is_closed and not warnings,
+        "warnings": warnings,
+        "daysWorked": len(worked_days),
+        "workingDays": len(employed_month_days),
+        "paidLeaveDays": len(paid_leave_days),
+        "unpaidLeaveDays": len(unpaid_leave_days),
+        "absentDays": len(absent_days),
+        "overtimeHours": _money_json(overtime_hours),
+        "overtimePay": _money_json(overtime_pay),
+        "basicEarnings": _money_json(base_pay),
+        "grossEarnings": _money_json(gross),
+        "baseDeductions": _money_json(attendance_deductions),
+        "absenceDeduction": _money_json(_money(absence_deduction)),
+        "unpaidLeaveDeduction": _money_json(_money(unpaid_leave_deduction)),
+        "advanceDeductions": _money_json(advance_deduction),
+        "totalDeductions": _money_json(deductions),
+        "netPay": _money_json(net),
+        "taxRegime": employee.tax_regime,
+        "statutoryDeductions": statutory,
+        "statutoryTaxesCalculated": False,
+        "basicSalary": _money_json(employee.basic_salary),
+        "dearnessAllowance": _money_json(employee.dearness_allowance),
+        "hra": _money_json(employee.house_rent_allowance),
+        "allowances": _money_json(employee.other_allowances),
+        "deductions": _money_json(deductions),
+        "_advanceInstallments": advances,
+    }
+
+
+def _public_payroll(item: dict, snapshot: PayrollSnapshot | None = None) -> dict:
+    values = {key: value for key, value in item.items() if key != "_advanceInstallments"}
+    if snapshot is not None:
+        values.update(
+            {
+                **snapshot.calculation_snapshot,
+                "id": snapshot.id,
+                "employeeId": item["employeeId"],
+                "employeeCode": item["employeeCode"],
+                "name": item["name"],
+                "department": item["department"],
+                "wageModel": item["wageModel"],
+                "baseWage": item["baseWage"],
+                "payrollMonth": snapshot.period,
+                "payrollStatus": "Finalized",
+                "finalizedAt": snapshot.finalized_at,
+                "grossEarnings": snapshot.gross_amount,
+                "totalDeductions": snapshot.total_deductions,
+                "netPay": snapshot.net_amount,
+                "deductions": snapshot.total_deductions,
+            }
+        )
+    return values
+
+
 def payroll_overview(db: Session, organization_id: UUID, period: str) -> dict:
     _period_date(period)
     rows = db.execute(
@@ -268,81 +575,130 @@ def payroll_overview(db: Session, organization_id: UUID, period: str) -> dict:
         )
         .order_by(Employee.full_name)
     ).all()
-    items = []
-    for employee, snapshot in rows:
-        if snapshot:
-            items.append(
-                {
-                    **snapshot.calculation_snapshot,
-                    "employeeId": employee.id,
-                    "employeeCode": employee.employee_code,
-                    "name": employee.full_name,
-                    "department": employee.department,
-                    "wageModel": employee.wage_model,
-                    "baseWage": employee.base_wage,
-                    "payrollMonth": period,
-                    "payrollStatus": "Finalized",
-                    "finalizedAt": snapshot.finalized_at,
-                    "grossEarnings": snapshot.gross_amount,
-                    "totalDeductions": snapshot.total_deductions,
-                    "netPay": snapshot.net_amount,
-                }
-            )
-        else:
-            items.append(
-                {
-                    "employeeId": employee.id,
-                    "employeeCode": employee.employee_code,
-                    "name": employee.full_name,
-                    "department": employee.department,
-                    "wageModel": employee.wage_model,
-                    "baseWage": employee.base_wage,
-                    "payrollMonth": period,
-                    "payrollStatus": "Needs Review",
-                    "grossEarnings": None,
-                    "totalDeductions": None,
-                    "netPay": None,
-                }
-            )
+    items = [
+        _public_payroll(
+            _calculate_employee_period(db, organization_id, employee, period),
+            snapshot,
+        )
+        for employee, snapshot in rows
+    ]
     return {"items": items, "total": len(items), "period": period}
 
 
 def payroll_summary(db: Session, organization_id: UUID, period: str) -> dict:
     _period_date(period)
-    rows = db.execute(
-        select(
-            func.count(PayrollSnapshot.id),
-            func.coalesce(func.sum(PayrollSnapshot.net_amount), 0),
-            func.coalesce(func.sum(PayrollSnapshot.gross_amount), 0),
-            func.coalesce(func.sum(PayrollSnapshot.total_deductions), 0),
-        ).where(
-            PayrollSnapshot.organization_id == organization_id,
-            PayrollSnapshot.period == period,
-        )
-    ).one()
-    employees = db.scalar(
-        select(func.count(Employee.id)).where(
-            Employee.organization_id == organization_id,
-            Employee.status == "Active",
-        )
-    ) or 0
-    finalized, net, gross, deductions = rows
+    overview = payroll_overview(db, organization_id, period)
+    items = overview["items"]
+    finalized = sum(item["payrollStatus"] == "Finalized" for item in items)
     return {
-        "totalEmployees": employees,
+        "totalEmployees": len(items),
         "finalizedEmployees": finalized,
-        "needsReview": employees - finalized,
-        "totalPayroll": net,
-        "totalGross": gross,
-        "totalDeductions": deductions,
-        "totalOvertime": None,
+        "needsReview": sum(item["payrollStatus"] == "Needs Review" for item in items),
+        "totalPayroll": sum(float(item["netPay"] or 0) for item in items),
+        "totalGross": sum(float(item["grossEarnings"] or 0) for item in items),
+        "totalDeductions": sum(float(item["totalDeductions"] or 0) for item in items),
+        "totalOvertime": sum(float(item["overtimePay"] or 0) for item in items),
+        "statutoryTaxesCalculated": False,
     }
 
 
-def finalize_payroll_not_ready() -> None:
-    raise HTTPException(
-        status_code=409,
-        detail="Payroll finalization is disabled until attendance, wage, deduction, and overtime rules are confirmed.",
+def finalize_payroll(
+    db: Session, organization_id: UUID, employee_id: UUID, period: str, user: User
+) -> dict:
+    employee = db.scalar(
+        select(Employee)
+        .where(
+            Employee.id == employee_id,
+            Employee.organization_id == organization_id,
+            Employee.status == "Active",
+        )
+        .with_for_update()
     )
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Active employee not found")
+    existing = db.scalar(
+        select(PayrollSnapshot).where(
+            PayrollSnapshot.organization_id == organization_id,
+            PayrollSnapshot.employee_id == employee_id,
+            PayrollSnapshot.period == period,
+        )
+    )
+    if existing is not None:
+        return _public_payroll(
+            _calculate_employee_period(db, organization_id, employee, period), existing
+        )
+
+    calculated = _calculate_employee_period(db, organization_id, employee, period)
+    if not calculated["canFinalize"]:
+        reason = "; ".join(calculated["warnings"])
+        if calculated["periodOpen"]:
+            reason = "The payroll period is still open."
+        raise HTTPException(
+            status_code=409,
+            detail=reason or "Payroll cannot be finalized until review items are resolved.",
+        )
+    installments = calculated.pop("_advanceInstallments")
+    finalized_at = datetime.now(UTC)
+    snapshot_data = {
+        key: value
+        for key, value in calculated.items()
+        if key not in {"employeeId", "employeeCode", "name", "department", "payrollStatus", "periodOpen", "canFinalize", "warnings", "baseWage", "wageModel"}
+    }
+    snapshot_data["advanceInstallments"] = [
+        {"advanceId": str(advance.id), "amount": float(amount)}
+        for advance, amount in installments
+    ]
+    period_start = _period_date(period)
+    period_end = date(
+        period_start.year,
+        period_start.month,
+        calendar.monthrange(period_start.year, period_start.month)[1],
+    )
+    snapshot = PayrollSnapshot(
+        organization_id=organization_id,
+        employee_id=employee_id,
+        period=period,
+        gross_amount=Decimal(str(calculated["grossEarnings"])),
+        total_deductions=Decimal(str(calculated["totalDeductions"])),
+        net_amount=Decimal(str(calculated["netPay"])),
+        calculation_snapshot=snapshot_data,
+        finalized_by=user.id,
+        finalized_at=finalized_at,
+    )
+    db.add(snapshot)
+    for advance, amount in installments:
+        db.add(
+            AdvanceRepayment(
+                advance_id=advance.id,
+                amount=amount,
+                date=period_end,
+                method="Payroll deduction",
+                note=f"Automatic payroll installment for {period}",
+                idempotency_key=f"payroll:{advance.id}:{period}",
+                payroll_period=period,
+            )
+        )
+        paid = _repayment_totals(db, [advance.id]).get(advance.id, {}).get("total", Decimal("0"))
+        if paid + amount >= advance.original_amount:
+            advance.status = "Repaid"
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(
+            select(PayrollSnapshot).where(
+                PayrollSnapshot.organization_id == organization_id,
+                PayrollSnapshot.employee_id == employee_id,
+                PayrollSnapshot.period == period,
+            )
+        )
+        if existing is None:
+            raise HTTPException(status_code=409, detail="Payroll could not be finalized.") from None
+        return _public_payroll(
+            _calculate_employee_period(db, organization_id, employee, period), existing
+        )
+    db.refresh(snapshot)
+    return _public_payroll(calculated | {"_advanceInstallments": installments}, snapshot)
 
 
 def my_payroll(db: Session, user: User) -> list[dict]:
@@ -357,18 +713,22 @@ def my_payroll(db: Session, user: User) -> list[dict]:
         .order_by(PayrollSnapshot.period.desc())
     ).all()
     return [
-        {
-            **snapshot.calculation_snapshot,
-            "id": snapshot.id,
-            "payrollMonth": snapshot.period,
-            "grossEarnings": snapshot.gross_amount,
-            "totalDeductions": snapshot.total_deductions,
-            "netPay": snapshot.net_amount,
-            "finalizedAt": snapshot.finalized_at,
-            "payrollStatus": "Finalized",
-        }
+        _payslip_values(snapshot)
         for snapshot in snapshots
     ]
+
+
+def _payslip_values(snapshot: PayrollSnapshot) -> dict:
+    return {
+        **snapshot.calculation_snapshot,
+        "id": snapshot.id,
+        "payrollMonth": snapshot.period,
+        "grossEarnings": snapshot.gross_amount,
+        "totalDeductions": snapshot.total_deductions,
+        "netPay": snapshot.net_amount,
+        "finalizedAt": snapshot.finalized_at,
+        "payrollStatus": "Finalized",
+    }
 
 
 def my_payslip(db: Session, user: User, payslip_id: UUID) -> dict:
@@ -381,13 +741,20 @@ def my_payslip(db: Session, user: User, payslip_id: UUID) -> dict:
     )
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Payslip not found")
-    return {
-        **snapshot.calculation_snapshot,
-        "id": snapshot.id,
-        "payrollMonth": snapshot.period,
-        "grossEarnings": snapshot.gross_amount,
-        "totalDeductions": snapshot.total_deductions,
-        "netPay": snapshot.net_amount,
-        "finalizedAt": snapshot.finalized_at,
-        "payrollStatus": "Finalized",
-    }
+    return _payslip_values(snapshot)
+
+
+def update_tax_regime(db: Session, user: User, regime: str) -> dict:
+    if user.employee_id is None:
+        raise HTTPException(status_code=403, detail="An employee profile is required")
+    employee = db.scalar(
+        select(Employee).where(
+            Employee.id == user.employee_id,
+            Employee.organization_id == user.organization_id,
+        )
+    )
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee profile not found")
+    employee.tax_regime = regime
+    db.commit()
+    return {"taxRegime": employee.tax_regime, "taxStatus": "Not calculated"}

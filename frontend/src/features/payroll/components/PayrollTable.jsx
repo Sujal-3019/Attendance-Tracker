@@ -23,20 +23,33 @@ function formatCurrency(value) {
 function getPayrollStatus(employee, isFinalized = false) {
   if (isFinalized || employee.payrollStatus === "Finalized") {
     return {
-      label: "Finalized",
+      label: "Finalized estimate",
       className:
         "bg-blue-500/10 text-blue-700 dark:text-blue-400",
     };
   }
 
-  if (
-    employee.unpaidLeaveDays > 0 ||
-    employee.totalDeductions > employee.baseEarnings * 0.1
-  ) {
+  if (employee.payrollStatus === "Period Open") {
+    return {
+      label: "Period Open",
+      className: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
+    };
+  }
+
+  if (employee.payrollStatus === "Needs Review") {
     return {
       label: "Needs Review",
+      className: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    };
+  }
+
+  if (
+    employee.payrollStatus === "Estimate"
+  ) {
+    return {
+      label: "Estimate · tax pending",
       className:
-        "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+        "bg-violet-500/10 text-violet-700 dark:text-violet-400",
     };
   }
 
@@ -173,7 +186,7 @@ function PayrollTable({
               </th>
 
               <th className="px-4 py-3 font-medium text-muted-foreground">
-                Net pay
+                Net estimate
               </th>
 
               <th className="px-4 py-3 font-medium text-muted-foreground">
@@ -325,7 +338,8 @@ function PayrollTable({
 
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
-                          disabled={isFinalized || isFinalizing}
+                          disabled={isFinalized || isFinalizing || !employee.canFinalize}
+                          title={!employee.canFinalize ? employee.warnings?.join(" ") || "Payroll can only be finalized after the period closes." : undefined}
                           onClick={() => handleFinalize(employee.employeeId)}
                         >
                           {isFinalizing ? (

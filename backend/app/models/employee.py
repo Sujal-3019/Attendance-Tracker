@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, ForeignKey, Numeric, String, Uuid, UniqueConstraint
+from sqlalchemy import Boolean, Date, ForeignKey, JSON, Numeric, String, Uuid, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -30,11 +30,19 @@ class Employee(TimestampMixin, Base):
     employment_type: Mapped[str] = mapped_column(String(30), nullable=False)
     work_mode: Mapped[str] = mapped_column(String(30), nullable=False)
     work_location: Mapped[str | None] = mapped_column(String(100))
+    hybrid_office_days: Mapped[list[str]] = mapped_column(
+        JSON, default=list, server_default=text("'[]'"), nullable=False
+    )
     joining_date: Mapped[date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="Active", nullable=False)
     profile_complete: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     wage_model: Mapped[str] = mapped_column(String(20), default="Monthly", nullable=False)
     base_wage: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"), nullable=False)
+    basic_salary: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    dearness_allowance: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    house_rent_allowance: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    other_allowances: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    tax_regime: Mapped[str] = mapped_column(String(10), default="new", nullable=False)
 
     organization: Mapped["Organization"] = relationship(back_populates="employees")
     user: Mapped["User | None"] = relationship(

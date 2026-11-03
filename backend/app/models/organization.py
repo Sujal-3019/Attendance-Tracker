@@ -15,6 +15,8 @@ class Organization(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     organization_type: Mapped[str] = mapped_column(String(30), nullable=False)
     enrollment_code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    country: Mapped[str | None] = mapped_column(String(100))
+    state: Mapped[str | None] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     users: Mapped[list["User"]] = relationship(back_populates="organization")

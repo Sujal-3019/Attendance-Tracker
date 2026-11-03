@@ -115,6 +115,8 @@ def register_admin(
         name=payload.organization_name.strip(),
         organization_type=payload.organization_type,
         enrollment_code_hash=hash_password(enrollment_code),
+        country=payload.country.strip(),
+        state=payload.state.strip(),
     )
     db.add(organization)
     db.flush()
@@ -144,6 +146,8 @@ def register_admin(
             "id": organization.id,
             "name": organization.name,
             "type": organization.organization_type,
+            "country": organization.country,
+            "state": organization.state,
         },
         employee_enrollment_code=enrollment_code,
     )

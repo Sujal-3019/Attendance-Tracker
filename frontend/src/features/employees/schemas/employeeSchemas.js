@@ -48,13 +48,15 @@ const employeeFields = {
     .string()
     .min(1, "Select a reporting manager"),
 
-  workMode: z
-    .string()
-    .min(1, "Select a work mode"),
+  workMode: z.enum(["Office", "Remote", "Hybrid"]),
 
   location: z
     .string()
     .min(1, "Select a location"),
+
+  hybridOfficeDays: z.array(
+    z.enum(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]),
+  ),
 
   status: z
     .string()
@@ -68,6 +70,23 @@ const employeeFields = {
     .min(0, "Salary cannot be negative")
     .max(100000000, "Salary is too large"),
 
+  basicSalary: z.preprocess(
+    (value) => value === "" || value == null ? null : Number(value),
+    z.number().min(0).nullable(),
+  ),
+  dearnessAllowance: z.preprocess(
+    (value) => value === "" || value == null ? null : Number(value),
+    z.number().min(0).nullable(),
+  ),
+  houseRentAllowance: z.preprocess(
+    (value) => value === "" || value == null ? null : Number(value),
+    z.number().min(0).nullable(),
+  ),
+  otherAllowances: z.preprocess(
+    (value) => value === "" || value == null ? null : Number(value),
+    z.number().min(0).nullable(),
+  ),
+
   leaveAllocations: z.array(
     z.object({
       leaveTypeId: z.string().uuid(),
@@ -76,11 +95,81 @@ const employeeFields = {
   ),
 };
 
-export const employeeSchema = z.object(employeeFields);
-export const employeeUpdateSchema = z.object(
+function validateWorkConfiguration(data, context) {
+  const salaryParts = [
+    data.basicSalary,
+    data.dearnessAllowance,
+    data.houseRentAllowance,
+    data.otherAllowances,
+  ];
+  if (salaryParts.some((value) => value !== null)) {
+    if (salaryParts.some((value) => value === null)) {
+      context.addIssue({
+        code: "custom",
+        path: ["basicSalary"],
+        message: "Enter all four salary components or leave them all blank.",
+      });
+    } else {
+      const componentTotalCents = salaryParts.reduce(
+        (total, value) => total + Math.round(value * 100),
+        0,
+      );
+      if (componentTotalCents !== Math.round(data.baseWage * 100)) {
+        context.addIssue({
+          code: "custom",
+          path: ["baseWage"],
+          message: "Total base salary is calculated from the salary components.",
+        });
+      }
+    }
+  }
+  if (data.workMode === "Hybrid") {
+    if (data.hybridOfficeDays.length < 1 || data.hybridOfficeDays.length > 6) {
+      context.addIssue({
+        code: "custom",
+        path: ["hybridOfficeDays"],
+        message: "Choose at least one office day and leave at least one remote day.",
+      });
+    }
+    if (data.location === "Remote") {
+      context.addIssue({
+        code: "custom",
+        path: ["location"],
+        message: "Hybrid employees must be assigned an office.",
+      });
+    }
+  } else if (data.hybridOfficeDays.length) {
+    context.addIssue({
+      code: "custom",
+      path: ["hybridOfficeDays"],
+      message: "A weekly office schedule is only used for Hybrid employees.",
+    });
+  }
+  if (data.workMode === "Office" && data.location === "Remote") {
+    context.addIssue({
+      code: "custom",
+      path: ["location"],
+      message: "Office employees must be assigned an office.",
+    });
+  }
+  if (data.workMode === "Remote" && data.location !== "Remote") {
+    context.addIssue({
+      code: "custom",
+      path: ["location"],
+      message: "Remote employees must use Remote as their assigned location.",
+    });
+  }
+}
+
+export const employeeSchema = z
+  .object(employeeFields)
+  .superRefine(validateWorkConfiguration);
+export const employeeUpdateSchema = z
+  .object(
   Object.fromEntries(
     Object.entries(employeeFields).filter(
       ([field]) => !["password", "name"].includes(field),
     ),
-  ),
-);
+    ),
+  )
+  .superRefine(validateWorkConfiguration);

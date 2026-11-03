@@ -90,6 +90,7 @@ function EmployeeAttendancePage() {
     today: null,
     history: [],
     pendingCorrection: null,
+    checkInRequiresLocation: true,
   });
   const [clock, setClock] = useState(() => new Date());
   const [loading, setLoading] = useState(true);
@@ -134,7 +135,9 @@ function EmployeeAttendancePage() {
 
     try {
       const record =
-        action === "check-in" ? await checkIn() : await checkOut();
+        action === "check-in"
+          ? await checkIn(attendance.checkInRequiresLocation)
+          : await checkOut();
 
       setAttendance((previous) => ({
         ...previous,
@@ -151,7 +154,11 @@ function EmployeeAttendancePage() {
           : `Check-out recorded at ${formatTime(record.checkOut)}.`,
       );
     } catch (err) {
-      setError(err.message || "Unable to record your attendance.");
+      setError(
+        action === "check-in" && err.status === 403
+          ? "Your browser shared your location, but it is outside the active office geofences. If you are at the office, enable precise location and ask your administrator to verify the office pin and radius."
+          : err.message || "Unable to record your attendance.",
+      );
     } finally {
       setActionLoading(false);
     }
@@ -402,7 +409,9 @@ function EmployeeAttendancePage() {
 
             <p className="mt-4 text-xs leading-5 text-muted-foreground">
               Reset requests are reviewed by an administrator before attendance
-              records are changed.
+              records are changed. {attendance.checkInRequiresLocation
+                ? "This is an office day: tap Check In to share your precise location and verify you are inside an active office geofence. The browser only prompts for permission when it has not already been granted."
+                : "This is a remote day: location access is not required for check-in."}
             </p>
             {attendance.pendingCorrection && (
               <p className="mt-2 text-sm font-medium text-amber-700 dark:text-amber-400">

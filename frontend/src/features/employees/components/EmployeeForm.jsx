@@ -1,8 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { Loader2, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import {
   updateEmployee,
 } from "../services/employeeService";
 import { getLeavePolicies } from "@/features/leaves/services/leavePolicyService";
+import { getWorkLocations } from "@/features/settings/services/settingsService";
 
 const departments = [
   "Engineering",
@@ -36,7 +37,15 @@ const employmentTypes = [
 
 const workModes = ["Office", "Remote", "Hybrid"];
 
-const locations = ["Head Office", "Remote"];
+const weekdays = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 
 const statuses = ["Active", "Inactive"];
 
@@ -53,9 +62,14 @@ const defaultValues = {
   manager: "",
   workMode: "",
   location: "",
+  hybridOfficeDays: [],
   status: "Active",
   wageModel: "Monthly",
   baseWage: 0,
+  basicSalary: null,
+  dearnessAllowance: null,
+  houseRentAllowance: null,
+  otherAllowances: null,
   leaveAllocations: [],
 };
 
@@ -64,6 +78,9 @@ function EmployeeForm({ employee = null }) {
   const [submitError, setSubmitError] = useState("");
   const [leaveTypesLoading, setLeaveTypesLoading] = useState(!employee);
   const [leaveTypesError, setLeaveTypesError] = useState("");
+  const [officeLocations, setOfficeLocations] = useState([]);
+  const [locationsLoading, setLocationsLoading] = useState(true);
+  const [locationsError, setLocationsError] = useState("");
   const [leaveAllocations, setLeaveAllocations] = useState(
     employee?.leaveAllocations ?? [],
   );
@@ -86,9 +103,14 @@ function EmployeeForm({ employee = null }) {
           manager: employee.manager ?? "",
           workMode: employee.workMode ?? "",
           location: employee.location ?? "",
+          hybridOfficeDays: employee.hybridOfficeDays ?? [],
           status: employee.status ?? "Active",
           wageModel: employee.wageModel ?? "Monthly",
           baseWage: Number(employee.baseWage ?? 0),
+          basicSalary: employee.basicSalary == null ? null : Number(employee.basicSalary),
+          dearnessAllowance: employee.dearnessAllowance == null ? null : Number(employee.dearnessAllowance),
+          houseRentAllowance: employee.houseRentAllowance == null ? null : Number(employee.houseRentAllowance),
+          otherAllowances: employee.otherAllowances == null ? null : Number(employee.otherAllowances),
           leaveAllocations: (employee.leaveAllocations ?? []).map(
             (allocation) => ({
               leaveTypeId: allocation.leaveTypeId,
@@ -104,8 +126,75 @@ function EmployeeForm({ employee = null }) {
     register,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = form;
+  const workMode = watch("workMode");
+  const hybridOfficeDays = watch("hybridOfficeDays") ?? [];
+  const basicSalary = watch("basicSalary");
+  const dearnessAllowance = watch("dearnessAllowance");
+  const houseRentAllowance = watch("houseRentAllowance");
+  const otherAllowances = watch("otherAllowances");
+  const salaryComponents = [
+    basicSalary,
+    dearnessAllowance,
+    houseRentAllowance,
+    otherAllowances,
+  ];
+  const hasCompleteSalaryBreakdown = salaryComponents.every(
+    (value) => value !== null && value !== "" && Number.isFinite(Number(value)),
+  );
+
+  useEffect(() => {
+    if (hasCompleteSalaryBreakdown) {
+      const totalCents = [
+        basicSalary,
+        dearnessAllowance,
+        houseRentAllowance,
+        otherAllowances,
+      ].reduce(
+        (total, value) => total + Math.round(Number(value) * 100),
+        0,
+      );
+      setValue("baseWage", totalCents / 100, {
+        shouldValidate: true,
+        shouldDirty: true,
+      });
+    }
+  }, [
+    hasCompleteSalaryBreakdown,
+    basicSalary,
+    dearnessAllowance,
+    houseRentAllowance,
+    otherAllowances,
+    setValue,
+  ]);
+
+  useEffect(() => {
+    let mounted = true;
+    getWorkLocations()
+      .then((locations) => {
+        if (mounted) {
+          setOfficeLocations(
+            locations.filter((location) => location.status === "Active"),
+          );
+        }
+      })
+      .catch((error) => {
+        if (mounted) {
+          setLocationsError(error.message || "Unable to load office locations.");
+        }
+      })
+      .finally(() => {
+        if (mounted) {
+          setLocationsLoading(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (employee) {
@@ -155,6 +244,14 @@ function EmployeeForm({ employee = null }) {
 
   async function onSubmit(values) {
     setSubmitError("");
+    if (values.workMode !== "Remote" && locationsLoading) {
+      setSubmitError("Office locations are still loading. Please wait and try again.");
+      return;
+    }
+    if (values.workMode !== "Remote" && officeLocations.length === 0) {
+      setSubmitError("Add an active office location in Settings before assigning this employee.");
+      return;
+    }
     if (leaveTypesLoading || leaveTypesError) {
       return;
     }
@@ -384,7 +481,32 @@ function EmployeeForm({ employee = null }) {
             required
             error={errors.workMode?.message}
           >
-            <SelectField {...register("workMode")}>
+            <SelectField
+              {...register("workMode", {
+                onChange: (event) => {
+                  const nextMode = event.target.value;
+                  if (nextMode === "Remote") {
+                    setValue("location", "Remote", { shouldValidate: true });
+                    setValue("hybridOfficeDays", [], { shouldValidate: true });
+                  } else {
+                    setValue(
+                      "location",
+                      officeLocations[0]?.name ?? "",
+                      { shouldValidate: true },
+                    );
+                    setValue(
+                      "hybridOfficeDays",
+                      nextMode === "Hybrid"
+                        ? employee?.hybridOfficeDays?.length
+                          ? employee.hybridOfficeDays
+                          : weekdays.slice(0, 5)
+                        : [],
+                      { shouldValidate: true },
+                    );
+                  }
+                },
+              })}
+            >
               <option value="">Select work mode</option>
 
               {workModes.map((mode) => (
@@ -400,17 +522,76 @@ function EmployeeForm({ employee = null }) {
             required
             error={errors.location?.message}
           >
-            <SelectField {...register("location")}>
-              <option value="">Select location</option>
-
-              {locations.map((location) => (
-                <option key={location} value={location}>
-                  {location}
-                </option>
-              ))}
+            <SelectField
+              {...register("location")}
+            >
+              {workMode === "Remote" ? (
+                <option value="Remote">Remote</option>
+              ) : (
+                <>
+                  <option value="">Select office</option>
+                  {officeLocations.map((location) => (
+                    <option key={location.id} value={location.name}>
+                      {location.name}
+                    </option>
+                  ))}
+                  {employee?.location &&
+                    workMode !== "Remote" &&
+                    !officeLocations.some(
+                      (location) => location.name === employee.location,
+                    ) && (
+                      <option value={employee.location}>
+                        {employee.location} (current assignment)
+                      </option>
+                    )}
+                </>
+              )}
             </SelectField>
+            {locationsError && (
+              <p role="alert" className="mt-1.5 text-xs text-red-600">
+                {locationsError}
+              </p>
+            )}
           </FormField>
         </div>
+        {workMode === "Hybrid" && (
+          <FormField
+            label="Weekly office days"
+            required
+            error={errors.hybridOfficeDays?.message}
+          >
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {weekdays.map((day) => {
+                const checked = hybridOfficeDays.includes(day);
+                return (
+                  <label
+                    key={day}
+                    className="flex items-center gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        setValue(
+                          "hybridOfficeDays",
+                          checked
+                            ? hybridOfficeDays.filter((item) => item !== day)
+                            : [...hybridOfficeDays, day],
+                          { shouldValidate: true, shouldDirty: true },
+                        )
+                      }
+                    />
+                    {day}
+                  </label>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Office days require check-in from within an active office geofence.
+              Other days are treated as remote and do not require GPS.
+            </p>
+          </FormField>
+        )}
       </section>
 
       {/* Compensation and leave allocation */}
@@ -434,16 +615,47 @@ function EmployeeForm({ employee = null }) {
             </SelectField>
           </FormField>
 
-          <FormField label="Base salary / wage" required error={errors.baseWage?.message}>
+          <FormField label="Total base salary / wage" required error={errors.baseWage?.message}>
             <Input
               {...register("baseWage", { valueAsNumber: true })}
               type="number"
               min="0"
               step="0.01"
               placeholder="0.00"
+              readOnly={hasCompleteSalaryBreakdown}
               className="h-10 rounded-xl"
             />
+            <p className="mt-1 text-xs text-muted-foreground">
+              This is the total used by payroll. It is calculated automatically when all salary components are entered.
+            </p>
           </FormField>
+        </div>
+
+        <div className="mt-5">
+          <p className="text-sm font-medium">Salary components (optional)</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Enter all four components or leave all blank. Their total becomes the base salary / wage. Statutory deductions remain unavailable until the applicable rules and coverage are configured.
+          </p>
+          <div className="mt-4 grid gap-5 md:grid-cols-2">
+            {[
+              ["basicSalary", "Basic salary"],
+              ["dearnessAllowance", "Dearness allowance"],
+              ["houseRentAllowance", "House rent allowance"],
+              ["otherAllowances", "Other allowances"],
+            ].map(([field, label]) => (
+              <FormField key={field} label={label} error={errors[field]?.message}>
+                <Input
+                  {...register(field, {
+                    setValueAs: (value) => value === "" ? null : Number(value),
+                  })}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="h-10 rounded-xl"
+                />
+              </FormField>
+            ))}
+          </div>
         </div>
 
         <div className="mt-6 space-y-4">

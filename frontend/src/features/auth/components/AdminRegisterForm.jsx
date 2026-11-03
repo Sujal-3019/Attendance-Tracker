@@ -30,6 +30,8 @@ function AdminRegisterForm() {
             setupCode: "",
             organizationName: "",
             organizationType: "",
+            country: "",
+            state: "",
             fullName: "",
             email: "",
             phone: "",
@@ -130,6 +132,23 @@ function AdminRegisterForm() {
                             {errors.organizationType.message}
                         </p>
                     )}
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                        <label htmlFor="country" className="text-sm font-medium">
+                            Country
+                        </label>
+                        <Input id="country" autoComplete="country-name" {...register("country")} />
+                        {errors.country && <p className="text-xs text-destructive">{errors.country.message}</p>}
+                    </div>
+                    <div className="space-y-2">
+                        <label htmlFor="state" className="text-sm font-medium">
+                            State / province
+                        </label>
+                        <Input id="state" autoComplete="address-level1" {...register("state")} />
+                        {errors.state && <p className="text-xs text-destructive">{errors.state.message}</p>}
+                    </div>
                 </div>
             </section>
 

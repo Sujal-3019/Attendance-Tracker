@@ -113,6 +113,7 @@ def test_admin_employee_creation_provisions_login_credentials(client):
 
     check_in = test_client.post(
         "/api/v1/me/attendance/check-in",
+        json={"latitude": 12.9716, "longitude": 77.5946, "accuracy": 5},
         headers={"Authorization": f"Bearer {employee_token}"},
     )
     assert check_in.status_code == 201
@@ -302,6 +303,8 @@ def test_first_admin_can_register_once_with_server_setup_code(empty_client, monk
         "setupCode": setup_code,
         "organizationName": "New Organization",
         "organizationType": "office",
+        "country": "India",
+        "state": "Karnataka",
         "fullName": "First Admin",
         "email": "first-admin@example.com",
         "phone": "9876543212",
@@ -318,6 +321,8 @@ def test_first_admin_can_register_once_with_server_setup_code(empty_client, monk
     result = registered.json()
     assert result["user"]["role"] == "admin"
     assert result["organization"]["name"] == "New Organization"
+    assert result["organization"]["country"] == "India"
+    assert result["organization"]["state"] == "Karnataka"
     assert len(result["employeeEnrollmentCode"]) > 20
     assert "password_hash" not in result
 
@@ -350,6 +355,8 @@ def test_first_admin_registration_rejects_wrong_setup_code(empty_client, monkeyp
             "setupCode": "wrong-setup-code-that-is-long-enough-to-validate",
             "organizationName": "New Organization",
             "organizationType": "office",
+            "country": "India",
+            "state": "Karnataka",
             "fullName": "First Admin",
             "email": "first-admin@example.com",
             "phone": "9876543212",

@@ -62,6 +62,22 @@ function OrganizationSettingsForm({
           />
         </FormField>
 
+        <FormField label="Country" error={errors.country?.message}>
+          <Input
+            {...register("country")}
+            autoComplete="country-name"
+            className="h-10 rounded-xl"
+          />
+        </FormField>
+
+        <FormField label="State / province" error={errors.state?.message}>
+          <Input
+            {...register("state")}
+            autoComplete="address-level1"
+            className="h-10 rounded-xl"
+          />
+        </FormField>
+
         <FormField
           label="Phone number"
           error={errors.phone?.message}

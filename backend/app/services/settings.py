@@ -39,9 +39,22 @@ def get_organization_profile(db: Session, organization_id: UUID) -> dict:
             OrganizationSettings.organization_id == organization_id
         )
     )
+    profile = {
+        "organizationName": organization.name,
+        "organizationEmail": "",
+        "phone": "",
+        "address": "",
+        "timezone": "Asia/Kolkata",
+        "currency": "INR",
+        "dateFormat": "DD/MM/YYYY",
+    }
     if record and record.organization_profile:
-        return record.organization_profile
-    return {"organizationName": organization.name}
+        profile.update(record.organization_profile)
+    return {
+        **profile,
+        "country": organization.country or "",
+        "state": organization.state or "",
+    }
 
 
 def update_organization_profile(
@@ -52,6 +65,8 @@ def update_organization_profile(
         raise HTTPException(status_code=404, detail="Organization not found")
     profile = payload.model_dump(by_alias=True)
     organization.name = payload.organization_name
+    organization.country = payload.country.strip()
+    organization.state = payload.state.strip()
     record = _settings_record(db, organization_id)
     record.organization_profile = profile
     db.commit()

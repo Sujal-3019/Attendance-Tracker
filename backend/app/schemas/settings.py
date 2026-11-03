@@ -2,19 +2,29 @@ from typing import Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.schemas.common import ApiSchema
 
 
 class OrganizationProfile(ApiSchema):
     organization_name: str = Field(min_length=2, max_length=100)
+    country: str = Field(min_length=2, max_length=100)
+    state: str = Field(min_length=2, max_length=100)
     organization_email: str
     phone: str = Field(min_length=10, max_length=20)
     address: str = Field(min_length=5, max_length=250)
     timezone: str
     currency: str = Field(min_length=3, max_length=3)
     date_format: str = Field(min_length=1, max_length=30)
+
+    @field_validator("country", "state")
+    @classmethod
+    def normalize_jurisdiction(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Country and state must be at least 2 characters")
+        return normalized
 
     @model_validator(mode="after")
     def validate_timezone(self):

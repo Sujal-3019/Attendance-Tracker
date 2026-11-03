@@ -13,7 +13,9 @@ def test_attendance_chart_uses_persisted_records(client):
     )
     admin_headers = _login(test_client, data["admin_email"], data["password"])
     check_in = test_client.post(
-        "/api/v1/me/attendance/check-in", headers=employee_headers
+        "/api/v1/me/attendance/check-in",
+        headers=employee_headers,
+        json={"latitude": 12.9716, "longitude": 77.5946, "accuracy": 5},
     )
     assert check_in.status_code == 201
 

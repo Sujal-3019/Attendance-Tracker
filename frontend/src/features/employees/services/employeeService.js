@@ -42,8 +42,10 @@ export function updateEmployee(employeeId, employeeData) {
   const {
     id: _id,
     name: _name,
+    password: _password,
     employeeId: employeeCode,
     attendance: _attendance,
+    status: _status,
     ...fields
   } = employeeData;
   return apiRequest(`/api/v1/employees/${encodeURIComponent(employeeId)}`, {

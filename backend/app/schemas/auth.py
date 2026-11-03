@@ -40,10 +40,20 @@ class AdminRegistrationRequest(ApiSchema):
     setup_code: str = Field(min_length=32, max_length=128)
     organization_name: str = Field(min_length=2, max_length=100)
     organization_type: Literal["office", "factory", "retail", "field", "other"]
+    country: str = Field(min_length=2, max_length=100)
+    state: str = Field(min_length=2, max_length=100)
     full_name: str = Field(min_length=2, max_length=100)
     email: EmailStr
     phone: str = Field(pattern="^[6-9]\\d{9}$")
     password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("country", "state")
+    @classmethod
+    def normalize_jurisdiction(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Country and state must be at least 2 characters")
+        return normalized
 
 
 class UserPublic(ApiSchema):

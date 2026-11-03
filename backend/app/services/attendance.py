@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as time_type
+from math import asin, cos, radians, sin, sqrt
 from zoneinfo import ZoneInfo
 from uuid import UUID
 
@@ -13,10 +14,10 @@ from sqlalchemy.orm import Session
 from app.models.attendance import AttendanceCorrection, AttendanceRecord
 from app.models.employee import Employee
 from app.models.leave import LeaveRequest
-from app.models.organization import OrganizationSettings
+from app.models.organization import OrganizationSettings, WorkLocation
 from app.models.payroll import Notification, OvertimeRequest
 from app.models.user import User
-from app.schemas.attendance import AttendanceCorrectionCreate
+from app.schemas.attendance import AttendanceCorrectionCreate, CheckInLocation
 
 
 def attendance_context(
@@ -143,10 +144,26 @@ def _require_employee(user: User) -> UUID:
     return user.employee_id
 
 
+def _checkin_requires_location(employee: Employee, local_now: datetime) -> bool:
+    if employee.work_mode == "Remote":
+        return False
+    if employee.work_mode == "Hybrid":
+        return local_now.strftime("%A") in (employee.hybrid_office_days or [])
+    return True
+
+
 def get_my_attendance(db: Session, user: User, *, page: int = 1, page_size: int = 30) -> dict:
     employee_id = _require_employee(user)
     mark_absences_for_organization(db, user.organization_id)
     local_now, _ = attendance_context(db, user.organization_id)
+    employee = db.scalar(
+        select(Employee).where(
+            Employee.id == employee_id,
+            Employee.organization_id == user.organization_id,
+        )
+    )
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee profile not found")
     today = local_now.date()
     rows = db.scalars(
         select(AttendanceRecord)
@@ -177,13 +194,63 @@ def get_my_attendance(db: Session, user: User, *, page: int = 1, page_size: int 
             if pending_correction and today_record
             else None
         ),
+        "checkInRequiresLocation": _checkin_requires_location(employee, local_now),
     }
 
 
-def check_in(db: Session, user: User) -> dict:
+def _validate_checkin_location(
+    db: Session, organization_id: UUID, payload: CheckInLocation
+) -> None:
+    if payload.latitude is None or payload.longitude is None or payload.accuracy is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Precise location is required for an office-day check-in.",
+        )
+    locations = db.scalars(
+        select(WorkLocation).where(
+            WorkLocation.organization_id == organization_id,
+            WorkLocation.is_active.is_(True),
+        )
+    ).all()
+    if not locations:
+        raise HTTPException(
+            status_code=409,
+            detail="Your organization has no active office locations configured.",
+        )
+
+    for location in locations:
+        latitude_delta = radians(float(location.latitude) - payload.latitude)
+        longitude_delta = radians(float(location.longitude) - payload.longitude)
+        latitude = radians(payload.latitude)
+        location_latitude = radians(float(location.latitude))
+        haversine = (
+            sin(latitude_delta / 2) ** 2
+            + cos(latitude)
+            * cos(location_latitude)
+            * sin(longitude_delta / 2) ** 2
+        )
+        distance = 6_371_000 * 2 * asin(sqrt(min(1, haversine)))
+        if distance + payload.accuracy <= location.radius_meters:
+            return
+
+    raise HTTPException(
+        status_code=403,
+        detail="Check-in is only available from within an active office's geofence. Enable precise location and try again.",
+    )
+
+
+def check_in(db: Session, user: User, payload: CheckInLocation) -> dict:
     employee_id = _require_employee(user)
     now = datetime.now(UTC)
     local_now, policy = attendance_context(db, user.organization_id, now)
+    employee = db.scalar(
+        select(Employee).where(
+            Employee.id == employee_id,
+            Employee.organization_id == user.organization_id,
+        )
+    )
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Employee profile not found")
     today = local_now.date()
     late_minutes = 0
     attendance_status = "Present"
@@ -204,6 +271,10 @@ def check_in(db: Session, user: User) -> dict:
         )
         .with_for_update()
     )
+    if record is not None and (record.check_in is not None or record.check_out is not None):
+        raise HTTPException(status_code=409, detail="You have already checked in today")
+    if _checkin_requires_location(employee, local_now):
+        _validate_checkin_location(db, user.organization_id, payload)
     if record is not None:
         if record.status == "Absent" and record.check_in is None:
             record.check_in = now
@@ -212,8 +283,6 @@ def check_in(db: Session, user: User) -> dict:
             db.commit()
             db.refresh(record)
             return _record_values(record)
-        if record.check_in is not None or record.check_out is not None:
-            raise HTTPException(status_code=409, detail="You have already checked in today")
         record.check_in = now
         record.status = attendance_status
         record.late_minutes = late_minutes

@@ -18,13 +18,13 @@ function PayrollSummary({ summary, loading = false }) {
     {
       title: "Total payroll",
       value: formatCurrency(summary?.totalPayroll ?? 0),
-      description: "Net payable this period",
+      description: "Estimated net before statutory tax",
       icon: Banknote,
     },
     {
       title: "Gross payroll",
       value: formatCurrency(summary?.totalGross ?? 0),
-      description: "Before deductions",
+      description: "Estimated gross earnings",
       icon: CircleDollarSign,
     },
     {

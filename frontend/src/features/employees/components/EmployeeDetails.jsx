@@ -195,6 +195,13 @@ function EmployeeDetails({
                             label="Assigned location"
                             value={employee.location}
                         />
+                        {employee.workMode === "Hybrid" && (
+                            <InfoItem
+                                icon={CalendarDays}
+                                label="Office days"
+                                value={(employee.hybridOfficeDays ?? []).join(", ")}
+                            />
+                        )}
                     </div>
                 </section>
 

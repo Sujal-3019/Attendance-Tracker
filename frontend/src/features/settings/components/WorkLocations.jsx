@@ -179,7 +179,7 @@ function WorkLocations() {
             Add location
           </DialogTrigger>
 
-          <DialogContent className="max-w-xl">
+          <DialogContent className="max-h-[90dvh] max-w-xl overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingLocation

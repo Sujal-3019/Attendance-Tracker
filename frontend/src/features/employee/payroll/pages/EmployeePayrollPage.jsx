@@ -15,6 +15,7 @@ import EmployeeAppShell from "@/features/employee/layouts/EmployeeAppShell";
 import {
   getMyPayroll,
   getMySalaryProjection,
+  updateMyTaxRegime,
 } from "@/features/employee/payroll/services/employeePayrollService";
 
 function formatCurrency(value) {
@@ -28,7 +29,8 @@ function formatCurrency(value) {
 function formatDate(value) {
   if (!value) return "—";
 
-  return new Date(`${value}T12:00:00`).toLocaleDateString("en-IN", {
+  const dateValue = value.includes("T") ? value : `${value}T12:00:00`;
+  return new Date(dateValue).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -57,11 +59,10 @@ function SummaryCard({ title, value, description, icon: Icon }) {
 
 function PayrollBreakdown({ record }) {
   const rows = [
-    { label: "Basic salary", amount: record.basicSalary, type: "earning" },
-    { label: "House rent allowance", amount: record.hra, type: "earning" },
-    { label: "Other allowances", amount: record.allowances, type: "earning" },
-    { label: "Overtime", amount: record.overtime, type: "earning" },
-    { label: "Deductions", amount: record.deductions, type: "deduction" },
+    { label: "Base earnings", amount: record.basicEarnings, type: "earning" },
+    { label: "Approved overtime", amount: record.overtimePay, type: "earning" },
+    { label: "Absence and unpaid leave", amount: record.baseDeductions, type: "deduction" },
+    { label: "Salary advance repayment", amount: record.advanceDeductions, type: "deduction" },
   ];
 
   return (
@@ -107,6 +108,9 @@ function PayrollBreakdown({ record }) {
               {formatCurrency(record.netPay)}
             </span>
           </div>
+          <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">
+            Income-tax TDS, EPF, ESI, and professional tax are not calculated. This is an estimate, not a statutory payslip.
+          </p>
         </div>
       </div>
     </section>
@@ -119,6 +123,9 @@ function EmployeePayrollPage() {
     records: [],
   });
   const [salary, setSalary] = useState(null);
+  const [taxRegime, setTaxRegime] = useState("new");
+  const [taxRegimeSaving, setTaxRegimeSaving] = useState(false);
+  const [taxRegimeMessage, setTaxRegimeMessage] = useState("");
   const [salaryLoadError, setSalaryLoadError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -153,6 +160,7 @@ function EmployeePayrollPage() {
       } else {
         setSalaryLoadError(false);
         setSalary(salaryResult.value);
+        setTaxRegime(salaryResult.value.taxRegime || "new");
       }
 
       const records =
@@ -185,9 +193,46 @@ function EmployeePayrollPage() {
   }, [loadPayroll]);
 
   const handleDownload = () => {
-    setError(
-      "Payslip downloads will be available when the backend generates official payslip documents.",
-    );
+    if (!selectedRecord) return;
+    const values = [
+      ["Pay period", `${selectedRecord.month} ${selectedRecord.year}`],
+      ["Status", "Estimate - statutory taxes not calculated"],
+      ["Base earnings", selectedRecord.basicEarnings ?? ""],
+      ["Approved overtime", selectedRecord.overtimePay ?? ""],
+      ["Absence and unpaid leave deductions", selectedRecord.baseDeductions ?? ""],
+      ["Salary advance repayment", selectedRecord.advanceDeductions ?? ""],
+      ["Gross earnings", selectedRecord.grossPay ?? ""],
+      ["Total deductions before statutory taxes", selectedRecord.deductions ?? ""],
+      ["Estimated net pay", selectedRecord.netPay ?? ""],
+      ["Tax regime", selectedRecord.taxRegime ?? taxRegime],
+    ];
+    const escape = (value) => {
+      const text = String(value ?? "");
+      const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+      return `"${safeText.replaceAll('"', '""')}"`;
+    };
+    const csv = values.map(([label, value]) => `${escape(label)},${escape(value)}`).join("\r\n");
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `salary-statement-${selectedRecord.payrollMonth}.csv`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleTaxRegimeSave = async () => {
+    setTaxRegimeSaving(true);
+    setTaxRegimeMessage("");
+    try {
+      await updateMyTaxRegime(taxRegime);
+      setTaxRegimeMessage("Tax regime preference saved. TDS is not currently calculated.");
+    } catch (saveError) {
+      setTaxRegimeMessage(saveError.message || "Unable to save the tax regime.");
+    } finally {
+      setTaxRegimeSaving(false);
+    }
   };
 
   const latest = payroll.latest;
@@ -255,6 +300,21 @@ function EmployeePayrollPage() {
                         {salary.wageModel} wage set by your administrator. This
                         is your assigned base wage, not a finalized payslip.
                       </p>
+                      {Object.values(salary.salaryComponents || {}).some((value) => value != null) && (
+                        <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                          {[
+                            ["Basic salary", salary.salaryComponents.basicSalary],
+                            ["Dearness allowance", salary.salaryComponents.dearnessAllowance],
+                            ["House rent allowance", salary.salaryComponents.houseRentAllowance],
+                            ["Other allowances", salary.salaryComponents.otherAllowances],
+                          ].filter(([, value]) => value != null).map(([label, value]) => (
+                            <div key={label} className="flex justify-between gap-4">
+                              <dt className="text-muted-foreground">{label}</dt>
+                              <dd className="font-medium">{formatCurrency(value)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      )}
                     </>
                   ) : (
                     <p className="mt-2 text-sm text-muted-foreground">
@@ -265,12 +325,34 @@ function EmployeePayrollPage() {
               </div>
             </section>
 
+            <section className="rounded-2xl border border-border/60 bg-card/70 p-5 shadow-sm backdrop-blur-xl sm:p-7">
+              <h2 className="font-semibold">Income-tax preference</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Choose your preferred regime. Tax is not calculated until the applicable FY 2026–27 rules and required declarations are verified.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <select
+                  value={taxRegime}
+                  onChange={(event) => setTaxRegime(event.target.value)}
+                  aria-label="Income-tax regime"
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="new">New regime</option>
+                  <option value="old">Old regime</option>
+                </select>
+                <Button onClick={handleTaxRegimeSave} disabled={taxRegimeSaving}>
+                  {taxRegimeSaving ? "Saving..." : "Save preference"}
+                </Button>
+                {taxRegimeMessage && <p role="status" className="text-sm text-muted-foreground">{taxRegimeMessage}</p>}
+              </div>
+            </section>
+
             {!latest ? (
               <div className="rounded-2xl border border-border/60 bg-card/70 p-10 text-center">
                 <Wallet className="mx-auto size-8 text-muted-foreground" />
                 <h2 className="mt-4 font-semibold">No payroll records yet</h2>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Finalized payslips and payment history will appear here when
+                  Finalized salary estimates and payroll history will appear here when
                   they are available.
                 </p>
               </div>
@@ -278,7 +360,7 @@ function EmployeePayrollPage() {
               <>
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               <SummaryCard
-                title="Latest net salary"
+                title="Latest net estimate"
                 value={formatCurrency(latest.netPay)}
                 description={`${latest.month} ${latest.year}`}
                 icon={Wallet}
@@ -293,7 +375,7 @@ function EmployeePayrollPage() {
 
               <SummaryCard
                 title="Overtime earnings"
-                value={formatCurrency(latest.overtime)}
+                value={formatCurrency(latest.overtimePay)}
                 description="Included in latest payroll"
                 icon={Clock3}
               />
@@ -311,7 +393,7 @@ function EmployeePayrollPage() {
                   <div>
                     <h2 className="font-semibold">Payment information</h2>
                     <p className="text-sm text-muted-foreground">
-                      Selected payslip
+                      Selected salary estimate
                     </p>
                   </div>
                 </div>
@@ -325,17 +407,17 @@ function EmployeePayrollPage() {
                   </div>
 
                   <div>
-                    <p className="text-sm text-muted-foreground">Payment date</p>
-                    <p className="mt-1 font-medium">
-                      {formatDate(selectedRecord?.paymentDate)}
-                    </p>
+                    <p className="text-sm text-muted-foreground">Finalized on</p>
+                    <p className="mt-1 font-medium">{formatDate(selectedRecord?.finalizedAt)}</p>
                   </div>
 
                   <div>
                     <p className="text-sm text-muted-foreground">Payment status</p>
                     <span className="mt-2 inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
                       <CheckCircle2 className="size-3.5" />
-                      {selectedRecord?.status}
+                      {selectedRecord?.payrollStatus === "Finalized"
+                        ? "Finalized estimate"
+                        : selectedRecord?.payrollStatus || selectedRecord?.status}
                     </span>
                   </div>
 
@@ -345,12 +427,11 @@ function EmployeePayrollPage() {
                     onClick={handleDownload}
                   >
                     <Download className="mr-2 size-4" />
-                    Download payslip
+                    Download salary statement
                   </Button>
 
                   <p className="text-xs leading-5 text-muted-foreground">
-                    Demo data only. Official payslip generation and downloads
-                    will be connected to the backend.
+                    Downloads are CSV salary statements. Statutory tax amounts are not included.
                   </p>
                 </div>
               </article>
@@ -405,7 +486,9 @@ function EmployeePayrollPage() {
                           <td className="px-5 py-4">
                             <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
                               <CheckCircle2 className="size-3.5" />
-                              {record.status}
+                              {record.payrollStatus === "Finalized"
+                                ? "Finalized estimate"
+                                : record.status}
                             </span>
                           </td>
 

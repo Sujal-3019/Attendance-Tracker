@@ -11,3 +11,10 @@ export function getMyPayslip(payslipId) {
 export function getMySalaryProjection() {
   return apiRequest("/api/v1/me/payroll/projection");
 }
+
+export function updateMyTaxRegime(taxRegime) {
+  return apiRequest("/api/v1/me/payroll/tax-regime", {
+    method: "PATCH",
+    body: { taxRegime },
+  });
+}

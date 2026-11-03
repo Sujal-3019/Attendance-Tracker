@@ -36,3 +36,7 @@ class AdvanceRepaymentRule(ApiSchema):
 class OvertimeDecision(ApiSchema):
     overtime_hours: Decimal | None = Field(default=None, gt=0, le=24)
     review_note: str = Field(min_length=2, max_length=1000)
+
+
+class TaxRegimeUpdate(ApiSchema):
+    tax_regime: Literal["old", "new"]

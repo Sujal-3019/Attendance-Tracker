@@ -14,11 +14,15 @@ def test_attendance_state_transitions_and_audited_reset(client):
     )
     assert before_checkin.status_code == 409
     checked_in = test_client.post(
-        "/api/v1/me/attendance/check-in", headers=employee_headers
+        "/api/v1/me/attendance/check-in",
+        headers=employee_headers,
+        json={"latitude": 12.9716, "longitude": 77.5946, "accuracy": 5},
     )
     assert checked_in.status_code == 201
     duplicate = test_client.post(
-        "/api/v1/me/attendance/check-in", headers=employee_headers
+        "/api/v1/me/attendance/check-in",
+        headers=employee_headers,
+        json={"latitude": 12.9716, "longitude": 77.5946, "accuracy": 5},
     )
     assert duplicate.status_code == 409
     checked_out = test_client.post(
@@ -88,7 +92,9 @@ def test_admin_can_filter_attendance_by_date_and_employee(client):
     employee_headers = _login(test_client, data["employee_email"], data["password"])
     admin_headers = _login(test_client, data["admin_email"], data["password"])
     checked_in = test_client.post(
-        "/api/v1/me/attendance/check-in", headers=employee_headers
+        "/api/v1/me/attendance/check-in",
+        headers=employee_headers,
+        json={"latitude": 12.9716, "longitude": 77.5946, "accuracy": 5},
     )
     assert checked_in.status_code == 201
 
@@ -111,7 +117,9 @@ def test_admin_can_clear_resolved_corrections_without_hiding_pending(client):
     employee_headers = _login(test_client, data["employee_email"], data["password"])
     admin_headers = _login(test_client, data["admin_email"], data["password"])
     assert test_client.post(
-        "/api/v1/me/attendance/check-in", headers=employee_headers
+        "/api/v1/me/attendance/check-in",
+        headers=employee_headers,
+        json={"latitude": 12.9716, "longitude": 77.5946, "accuracy": 5},
     ).status_code == 201
     assert test_client.post(
         "/api/v1/me/attendance/check-out", headers=employee_headers
@@ -191,7 +199,9 @@ def test_employee_is_marked_absent_after_grace_then_late_on_checkin(client, monk
     assert after_deadline.json()["today"]["checkIn"] is None
 
     checked_in = test_client.post(
-        "/api/v1/me/attendance/check-in", headers=employee_headers
+        "/api/v1/me/attendance/check-in",
+        headers=employee_headers,
+        json={"latitude": 12.9716, "longitude": 77.5946, "accuracy": 5},
     )
     assert checked_in.status_code == 201
     assert checked_in.json()["status"] == "Late"
@@ -219,11 +229,189 @@ def test_checkin_at_grace_deadline_is_present(client, monkeypatch):
     )
 
     checked_in = test_client.post(
-        "/api/v1/me/attendance/check-in", headers=employee_headers
+        "/api/v1/me/attendance/check-in",
+        headers=employee_headers,
+        json={"latitude": 12.9716, "longitude": 77.5946, "accuracy": 5},
     )
 
     assert checked_in.status_code == 201
     assert checked_in.json()["status"] == "Present"
+
+
+def test_checkin_requires_location_inside_an_active_office(client):
+    test_client, data = client
+    headers = _login(test_client, data["employee_email"], data["password"])
+
+    outside = test_client.post(
+        "/api/v1/me/attendance/check-in",
+        headers=headers,
+        json={"latitude": 12.98, "longitude": 77.6, "accuracy": 5},
+    )
+    assert outside.status_code == 403
+    assert "geofence" in outside.json()["detail"]
+
+    inside = test_client.post(
+        "/api/v1/me/attendance/check-in",
+        headers=headers,
+        json={"latitude": 12.9716, "longitude": 77.5946, "accuracy": 5},
+    )
+    assert inside.status_code == 201
+
+
+def test_checkin_requires_an_active_office_location(client):
+    test_client, data = client
+    headers = _login(test_client, data["employee_email"], data["password"])
+    admin_headers = _login(test_client, data["admin_email"], data["password"])
+    location = test_client.get(
+        "/api/v1/settings/work-locations", headers=admin_headers
+    ).json()[0]
+    deactivated = test_client.patch(
+        f"/api/v1/settings/work-locations/{location['id']}/status",
+        headers=admin_headers,
+        json={"status": "Inactive"},
+    )
+    assert deactivated.status_code == 200
+
+    response = test_client.post(
+        "/api/v1/me/attendance/check-in",
+        headers=headers,
+        json={"latitude": 12.9716, "longitude": 77.5946, "accuracy": 5},
+    )
+    assert response.status_code == 409
+
+
+def test_checkin_accepts_a_different_active_office(client):
+    test_client, data = client
+    headers = _login(test_client, data["employee_email"], data["password"])
+    admin_headers = _login(test_client, data["admin_email"], data["password"])
+    original = test_client.get(
+        "/api/v1/settings/work-locations", headers=admin_headers
+    ).json()[0]
+    new_office = test_client.post(
+        "/api/v1/settings/work-locations",
+        headers=admin_headers,
+        json={
+            "name": "Second Office",
+            "address": "Pune Office",
+            "latitude": 18.5204,
+            "longitude": 73.8567,
+            "radiusMeters": 200,
+            "primary": False,
+        },
+    )
+    assert new_office.status_code == 201
+    deactivated = test_client.patch(
+        f"/api/v1/settings/work-locations/{original['id']}/status",
+        headers=admin_headers,
+        json={"status": "Inactive"},
+    )
+    assert deactivated.status_code == 200
+
+    check_in = test_client.post(
+        "/api/v1/me/attendance/check-in",
+        headers=headers,
+        json={"latitude": 18.5204, "longitude": 73.8567, "accuracy": 5},
+    )
+    assert check_in.status_code == 201
+
+
+def test_hybrid_remote_days_do_not_require_gps(client, monkeypatch):
+    from datetime import datetime, timezone
+
+    import app.services.attendance as attendance_service
+
+    test_client, data = client
+    employee_headers = _login(test_client, data["employee_email"], data["password"])
+    admin_headers = _login(test_client, data["admin_email"], data["password"])
+    updated = test_client.patch(
+        f"/api/v1/employees/{data['employee_id']}",
+        headers=admin_headers,
+        json={
+            "workMode": "Hybrid",
+            "location": "Main Office",
+            "hybridOfficeDays": ["Monday"],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    local_now = datetime(2026, 11, 3, 8, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        attendance_service,
+        "attendance_context",
+        lambda _db, _organization_id, now=None: (
+            local_now,
+            {"workStartTime": "09:00", "workingDays": ["Tuesday"]},
+        ),
+    )
+
+    history = test_client.get("/api/v1/me/attendance", headers=employee_headers)
+    assert history.status_code == 200
+    assert history.json()["checkInRequiresLocation"] is False
+    checked_in = test_client.post(
+        "/api/v1/me/attendance/check-in",
+        headers=employee_headers,
+        json={},
+    )
+    assert checked_in.status_code == 201
+
+
+def test_hybrid_office_days_still_require_the_office_geofence(client, monkeypatch):
+    from datetime import datetime, timezone
+
+    import app.services.attendance as attendance_service
+
+    test_client, data = client
+    employee_headers = _login(test_client, data["employee_email"], data["password"])
+    admin_headers = _login(test_client, data["admin_email"], data["password"])
+    updated = test_client.patch(
+        f"/api/v1/employees/{data['employee_id']}",
+        headers=admin_headers,
+        json={
+            "workMode": "Hybrid",
+            "location": "Main Office",
+            "hybridOfficeDays": ["Monday"],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    local_now = datetime(2026, 11, 2, 8, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(
+        attendance_service,
+        "attendance_context",
+        lambda _db, _organization_id, now=None: (
+            local_now,
+            {"workStartTime": "09:00", "workingDays": ["Monday"]},
+        ),
+    )
+    history = test_client.get("/api/v1/me/attendance", headers=employee_headers)
+    assert history.status_code == 200
+    assert history.json()["checkInRequiresLocation"] is True
+    denied = test_client.post(
+        "/api/v1/me/attendance/check-in",
+        headers=employee_headers,
+        json={"latitude": 12.98, "longitude": 77.6, "accuracy": 5},
+    )
+    assert denied.status_code == 403
+
+
+def test_remote_employee_can_check_in_without_location(client):
+    test_client, data = client
+    employee_headers = _login(test_client, data["employee_email"], data["password"])
+    admin_headers = _login(test_client, data["admin_email"], data["password"])
+    updated = test_client.patch(
+        f"/api/v1/employees/{data['employee_id']}",
+        headers=admin_headers,
+        json={"workMode": "Remote", "location": "Remote"},
+    )
+    assert updated.status_code == 200, updated.text
+
+    history = test_client.get("/api/v1/me/attendance", headers=employee_headers)
+    assert history.status_code == 200
+    assert history.json()["checkInRequiresLocation"] is False
+    checked_in = test_client.post(
+        "/api/v1/me/attendance/check-in",
+        headers=employee_headers,
+        json={},
+    )
+    assert checked_in.status_code == 201
 
 
 def test_attendance_summary_uses_organization_local_date(client, monkeypatch):

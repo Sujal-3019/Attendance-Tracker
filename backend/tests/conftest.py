@@ -14,7 +14,7 @@ from app.db.base import Base
 from app.main import app
 from app.models.employee import Employee
 from app.models.leave import LeaveType
-from app.models.organization import Organization
+from app.models.organization import Organization, OrganizationSettings, WorkLocation
 from app.models.user import User
 
 
@@ -63,6 +63,29 @@ def client() -> Generator[tuple[TestClient, dict[str, str]], None, None]:
             base_wage=50000,
         )
         db.add_all([organization, employee])
+        db.add(
+            WorkLocation(
+                organization_id=organization_id,
+                name="Main Office",
+                address="Bengaluru",
+                latitude=12.9716,
+                longitude=77.5946,
+                radius_meters=150,
+                is_primary=True,
+                is_active=True,
+            )
+        )
+        db.add(
+            OrganizationSettings(
+                organization_id=organization_id,
+                organization_profile={"timezone": "UTC"},
+                attendance_policy={
+                    "workingDays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+                    "minimumWorkingHours": 8,
+                },
+                payroll_policy={},
+            )
+        )
         db.flush()
         db.add_all(
             [

@@ -58,6 +58,8 @@ def get_profile(
         "employmentType": employee.employment_type,
         "joiningDate": employee.joining_date,
         "workMode": employee.work_mode,
+        "location": employee.work_location,
+        "hybridOfficeDays": employee.hybrid_office_days or [],
         "manager": employee.manager,
         "profileComplete": employee.profile_complete,
     }

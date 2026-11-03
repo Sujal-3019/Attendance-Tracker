@@ -7,6 +7,10 @@ export const organizationSettingsSchema = z.object({
         .min(2, "Organization name is required")
         .max(100, "Organization name is too long"),
 
+    country: z.string().trim().min(2, "Country is required").max(100),
+
+    state: z.string().trim().min(2, "State / province is required").max(100),
+
     organizationEmail: z
         .string()
         .trim()

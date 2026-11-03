@@ -1,5 +1,5 @@
-import { Save } from "lucide-react";
-import { useEffect } from "react";
+import { MapPin, Search, Save } from "lucide-react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 import { workLocationSchema } from "../schemas/settingsSchemas";
+
+const WorkLocationMap = lazy(() => import("./WorkLocationMap"));
 
 const defaultValues = {
   name: "",
@@ -27,11 +29,21 @@ function WorkLocationForm({
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(workLocationSchema),
     defaultValues,
   });
+  const latitude = watch("latitude");
+  const longitude = watch("longitude");
+  const radiusMeters = watch("radiusMeters");
+  const address = watch("address");
+  const latitudeNumber = latitude === "" ? Number.NaN : Number(latitude);
+  const longitudeNumber = longitude === "" ? Number.NaN : Number(longitude);
+  const [lookupError, setLookupError] = useState("");
+  const [lookingUp, setLookingUp] = useState(false);
 
   useEffect(() => {
     if (location) {
@@ -47,6 +59,52 @@ function WorkLocationForm({
       reset(defaultValues);
     }
   }, [location, reset]);
+
+  async function findAddress() {
+    if (!address?.trim()) {
+      setLookupError("Enter an address to find it on the map.");
+      return;
+    }
+
+    setLookingUp(true);
+    setLookupError("");
+    try {
+      const query = new URLSearchParams({
+        q: address.trim(),
+        format: "jsonv2",
+        limit: "1",
+      });
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?${query}`,
+        { headers: { Accept: "application/json" } },
+      );
+      if (!response.ok) {
+        throw new Error("Address lookup is unavailable. Try selecting the map.");
+      }
+
+      const [result] = await response.json();
+      if (!result) {
+        setLookupError("No matching address found. Select the location on the map.");
+        return;
+      }
+
+      setValue("latitude", Number(result.lat), { shouldValidate: true });
+      setValue("longitude", Number(result.lon), { shouldValidate: true });
+    } catch (error) {
+      setLookupError(error.message || "Unable to search this address.");
+    } finally {
+      setLookingUp(false);
+    }
+  }
+
+  function selectCoordinates(nextLatitude, nextLongitude) {
+    setValue("latitude", Number(nextLatitude.toFixed(6)), {
+      shouldValidate: true,
+    });
+    setValue("longitude", Number(nextLongitude.toFixed(6)), {
+      shouldValidate: true,
+    });
+  }
 
   return (
     <form
@@ -96,6 +154,44 @@ function WorkLocationForm({
           className="w-full resize-none rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
         />
       </FormField>
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={findAddress}
+          disabled={lookingUp || !address?.trim()}
+          className="rounded-xl"
+        >
+          <Search className="size-4" />
+          {lookingUp ? "Finding address..." : "Find address on map"}
+        </Button>
+        <p className="self-center text-xs text-muted-foreground">
+          Drag to pan, use + / - to zoom, or click to place the office pin.
+        </p>
+      </div>
+      {lookupError && (
+        <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+          {lookupError}
+        </p>
+      )}
+      <Suspense
+        fallback={
+          <div className="h-72 animate-pulse rounded-xl bg-muted" />
+        }
+      >
+        <WorkLocationMap
+          latitude={latitudeNumber}
+          longitude={longitudeNumber}
+          radiusMeters={radiusMeters}
+          onSelect={selectCoordinates}
+        />
+      </Suspense>
+      <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+        <MapPin className="mt-0.5 size-4 shrink-0" />
+        Address search uses OpenStreetMap's public Nominatim service. Map tiles
+        and address queries are sent to OpenStreetMap services.
+      </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField

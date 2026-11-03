@@ -314,6 +314,18 @@ export default function EmployeeProfilePage() {
                   icon={MapPin}
                 />
                 <Detail
+                  label="Assigned location"
+                  value={profile.location}
+                  icon={MapPin}
+                />
+                {profile.workMode === "Hybrid" && (
+                  <Detail
+                    label="Office days"
+                    value={(profile.hybridOfficeDays ?? []).join(", ")}
+                    icon={CalendarDays}
+                  />
+                )}
+                <Detail
                   label="Reporting manager"
                   value={profile.manager}
                   icon={UserRound}

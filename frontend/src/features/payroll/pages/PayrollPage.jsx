@@ -191,18 +191,9 @@ function PayrollPage() {
         filters.wageModel === "All" ||
         employee.wageModel === filters.wageModel;
 
-      let payrollStatus = "Ready";
-
-      if (
-        employee.unpaidLeaveDays > 0 ||
-        employee.totalDeductions > employee.baseEarnings * 0.1
-      ) {
-        payrollStatus = "Needs Review";
-      }
-
       const matchesStatus =
         filters.payrollStatus === "All" ||
-        payrollStatus === filters.payrollStatus;
+        employee.payrollStatus === filters.payrollStatus;
 
       return (
         matchesSearch &&
@@ -240,15 +231,50 @@ function PayrollPage() {
   }
 
   function handleRunPayroll() {
-    window.alert(
-      `Payroll run for ${month}/${year} will be handled by the backend.`,
-    );
+    setPayrollRefresh((current) => current + 1);
   }
 
   function handleExport() {
-    window.alert(
-      `Payroll export for ${month}/${year} will be handled by the backend.`,
-    );
+    if (!filteredEmployees.length) {
+      setError("There are no payroll rows to export for the selected filters.");
+      return;
+    }
+    const columns = [
+      ["Employee", "name"],
+      ["Employee ID", "employeeCode"],
+      ["Department", "department"],
+      ["Wage model", "wageModel"],
+      ["Base wage", "baseWage"],
+      ["Days worked", "daysWorked"],
+      ["Paid leave days", "paidLeaveDays"],
+      ["Unpaid leave days", "unpaidLeaveDays"],
+      ["Absent days", "absentDays"],
+      ["Overtime hours", "overtimeHours"],
+      ["Gross earnings", "grossEarnings"],
+      ["Attendance/leave deductions", "baseDeductions"],
+      ["Advance deductions", "advanceDeductions"],
+      ["Net estimate before statutory taxes", "netPay"],
+      ["Status", "payrollStatus"],
+    ];
+    const escape = (value) => {
+      const text = String(value ?? "");
+      const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+      return `"${safeText.replaceAll('"', '""')}"`;
+    };
+    const rows = [
+      columns.map(([label]) => escape(label)).join(","),
+      ...filteredEmployees.map((employee) =>
+        columns.map(([, key]) => escape(employee[key])).join(","),
+      ),
+    ];
+    const url = URL.createObjectURL(new Blob([`\uFEFF${rows.join("\r\n")}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `payroll-${year}-${String(month).padStart(2, "0")}.csv`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   return (
@@ -262,6 +288,10 @@ function PayrollPage() {
           onRunPayroll={handleRunPayroll}
           onExport={handleExport}
         />
+
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+          Payroll totals are estimates. Income-tax TDS, EPF, ESI, and professional tax are not calculated until current rules and coverage are configured.
+        </div>
 
         {error && (
           <div

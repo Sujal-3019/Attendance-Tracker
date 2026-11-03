@@ -12,6 +12,7 @@ from app.schemas.attendance import (
     AttendanceCorrectionCreate,
     AttendanceCorrectionDecision,
     AttendanceRecordPage,
+    CheckInLocation,
     ForgotCheckoutDecision,
 )
 from app.services import attendance as attendance_service
@@ -33,8 +34,12 @@ def get_my_attendance(
 
 
 @router.post("/me/attendance/check-in", status_code=201)
-def check_in(user: AuthenticatedUser, db: Annotated[Session, Depends(get_db)]) -> dict:
-    return attendance_service.check_in(db, user)
+def check_in(
+    payload: CheckInLocation,
+    user: AuthenticatedUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict:
+    return attendance_service.check_in(db, user, payload)
 
 
 @router.post("/me/attendance/check-out")

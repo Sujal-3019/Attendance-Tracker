@@ -17,6 +17,10 @@ export const adminRegisterSchema = z
       .string()
       .min(1, "Please select an organization type."),
 
+    country: z.string().trim().min(2, "Country is required.").max(100),
+
+    state: z.string().trim().min(2, "State / province is required.").max(100),
+
     fullName: z
       .string()
       .trim()

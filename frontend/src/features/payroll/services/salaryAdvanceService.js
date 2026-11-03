@@ -36,7 +36,3 @@ export function updateAdvanceRepaymentRule(advanceId, payload) {
     { method: "PATCH", body: payload },
   );
 }
-
-export function settlePayrollAdvanceDeductions() {
-  throw new Error("Payroll-linked advance deductions require confirmed payroll rules.");
-}
